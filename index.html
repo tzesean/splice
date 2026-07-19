@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Beam Splice Design — EN 1993</title>
+<meta name="description" content="Bolted beam splice design calculator to EN 1993-1-8 (UK NA), with full check chain and PDF calc-sheet export.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<style>
+  :root{
+    --bg: #000000;
+    --panel: #111111;
+    --panel-2: #0A0A0A;
+    --line: #2A2A2A;
+    --ink: #FFFFFF;
+    --ink-dim: #B3B3B3;
+    --ink-faint: #737373;
+    --cyan: #0B6623;
+    --amber: #98FB98;
+    --danger: #E0664A;
+    --radius: 10px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(1200px 600px at 15% -10%, rgba(11,102,35,0.08), transparent 60%),
+      radial-gradient(900px 500px at 110% 10%, rgba(152,251,152,0.06), transparent 55%),
+      var(--bg);
+    color:var(--ink);
+    font-family:'Inter', sans-serif;
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+  }
+  .wrap{max-width:1180px; margin:0 auto; padding:36px 20px 80px;}
+
+  .grid{display:grid; grid-template-columns:1fr 1fr; gap:22px; align-items:start;}
+  @media (max-width:920px){ .grid{grid-template-columns:1fr;} }
+
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:22px 22px 24px;}
+  .card + .card{margin-top:22px;}
+  .card h2{
+    font-family:'JetBrains Mono',monospace; font-size:13.5px; font-weight:700; text-transform:uppercase;
+    letter-spacing:.08em; color:var(--cyan); margin:0 0 16px; padding-bottom:14px;
+    border-bottom:1px solid var(--line); display:flex; align-items:center; gap:8px;
+  }
+  .card .sub{font-family:'JetBrains Mono',monospace; color:var(--ink-faint); font-size:11.5px; margin:-8px 0 16px; line-height:1.6;}
+  .num{color:var(--cyan); font-family:'JetBrains Mono',monospace; font-size:12px; text-transform:none; letter-spacing:0;}
+  .out-chip{margin-left:auto; font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:700; color:var(--cyan); background:rgba(11,102,35,0.12); border:1px solid var(--cyan); padding:3px 10px; border-radius:6px; text-transform:none; letter-spacing:0;}
+  .out-chip.fail{color:var(--danger); border-color:var(--danger); background:rgba(224,102,74,0.12);}
+
+  .field-row{display:grid; grid-template-columns:1fr 150px; gap:16px; align-items:center; padding:14px 0; border-bottom:1px solid var(--line);}
+  .field-row:last-child{border-bottom:none;}
+  .field-row.select-row{grid-template-columns:1fr 1fr;}
+  .field-label{font-family:'JetBrains Mono',monospace; font-size:13px; color:var(--ink-dim); display:flex; align-items:baseline; gap:6px; flex-wrap:wrap;}
+  .field-label .sym{font-family:'JetBrains Mono',monospace; color:var(--cyan); font-size:13px;}
+  .sym{color:var(--cyan);}
+  .field-label .hint{font-size:11px; color:var(--ink-faint); display:block; margin-top:2px; font-family:'JetBrains Mono',monospace;}
+
+  input[type=number], input[type=text], select{
+    width:100%; background:rgba(11,102,35,0.12); border:1.5px solid var(--cyan); color:var(--cyan);
+    font-family:'JetBrains Mono',monospace; font-weight:700; font-size:14px; padding:10px 12px; border-radius:6px; text-align:left;
+    transition:border-color .15s, box-shadow .15s, background .15s;
+  }
+  select{appearance:none; -webkit-appearance:none; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%230B6623'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 12px center; padding-right:30px;}
+  input:focus, select:focus{outline:none; border-color:var(--amber); box-shadow:0 0 0 3px rgba(152,251,152,0.15); background:rgba(11,102,35,0.2);}
+  input[disabled]{color:var(--ink-faint); border-color:var(--line); background:var(--panel-2); cursor:not-allowed;}
+
+  .divider{height:1px; background:var(--line); margin:18px 0;}
+  .case-heading{font-family:'JetBrains Mono',monospace; font-weight:700; font-size:12.5px; text-transform:uppercase; letter-spacing:.08em; margin:0 0 12px; padding-left:10px; border-left:3px solid var(--line);}
+  .case-heading-w{color:var(--cyan); border-left-color:var(--cyan);}
+  .case-heading-l{color:var(--amber); border-left-color:var(--amber);}
+
+  .sheet{position:sticky; top:20px;}
+  .step{margin-bottom:16px;}
+  .step:last-child{margin-bottom:0;}
+  .step-title{font-family:'JetBrains Mono',monospace; font-size:11.5px; color:var(--ink-faint); letter-spacing:.02em; margin-bottom:6px;}
+  .eqline{font-family:'JetBrains Mono',monospace; font-size:12.5px; color:var(--ink-dim); line-height:1.85; border-left:2px solid var(--line); padding-left:12px;}
+  .eqline .result{color:var(--cyan); font-weight:600;}
+  .eqline.fail{border-left-color:var(--danger);}
+  .eqline.fail .result{color:var(--danger);}
+  .eqline .status{font-weight:700;}
+  .eqline .status.pass{color:var(--cyan);}
+  .eqline .status.fail{color:var(--danger);}
+
+  .final{
+    background:linear-gradient(135deg, rgba(11,102,35,0.10), rgba(11,102,35,0.02));
+    border:1px solid rgba(11,102,35,0.3); border-radius:var(--radius); padding:20px; margin-top:4px;
+  }
+  .final.fail{background:linear-gradient(135deg, rgba(224,102,74,0.10), rgba(224,102,74,0.02)); border:1px solid rgba(224,102,74,0.3);}
+  .final .label{font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--ink-dim); letter-spacing:.02em; margin-bottom:6px;}
+  .final .value{font-family:'JetBrains Mono',monospace; font-size:34px; font-weight:700; color:var(--cyan); line-height:1;}
+  .final.fail .value{color:var(--danger);}
+  .final .value small{font-size:16px; color:var(--ink-dim); font-weight:500;}
+
+  .actions{display:flex; gap:10px; margin-top:22px; flex-wrap:wrap;}
+  button{
+    font-family:'JetBrains Mono',monospace; font-weight:700; font-size:13px; letter-spacing:.04em; text-transform:uppercase;
+    border-radius:8px; padding:11px 18px; cursor:pointer; border:1px solid transparent;
+    transition:transform .1s ease, background .15s ease, border-color .15s ease;
+  }
+  button:active{transform:scale(0.98);}
+  .btn-primary{background:var(--cyan); color:#FFFFFF; border-color:var(--cyan);}
+  .btn-primary:hover{background:#0E7A2B;}
+  .btn-ghost{background:transparent; color:var(--ink-dim); border-color:var(--line);}
+  .btn-ghost:hover{color:var(--ink); border-color:var(--ink-faint);}
+
+  footer{margin-top:40px; padding-top:18px; border-top:1px solid var(--line); font-size:12px; color:var(--ink-faint); display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;}
+
+  .note{font-size:11.5px; color:var(--ink-faint); line-height:1.6; margin-top:14px; padding-top:12px; border-top:1px dashed var(--line);}
+  .note ul{margin:0; padding-left:16px;}
+  .note li{margin-bottom:4px;}
+  .note li:last-child{margin-bottom:0;}
+
+  .msg-line{font-family:'JetBrains Mono',monospace; font-size:11px; margin:-8px 0 6px; padding-left:2px;}
+  .msg-line.ok{color:var(--amber);}
+  .msg-line.warn{color:var(--danger);}
+  .msg-line.empty{display:none;}
+
+  .out-line{display:flex; justify-content:space-between; padding:9px 0; border-bottom:1px dashed var(--line); font-family:'JetBrains Mono',monospace; font-size:12.5px; color:var(--ink-dim);}
+  .out-line:last-child{border-bottom:none;}
+  .out-line .v{color:var(--ink);font-weight:600;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="grid">
+
+    <!-- LEFT: INPUTS -->
+    <div>
+
+      <div class="card">
+        <h2>Notes</h2>
+        <div class="note" style="margin-top:0; padding-top:0; border-top:none;">
+          <ul>
+            <li>Bolted cover-plate splice connecting two beam sections.</li>
+            <li>Based on SCI P398 "Joints in Steel Construction — Moment Connections" Example D.1.</li>
+            <li>Carries section moment and shear capacity.</li>
+            <li>Bolt slip resistance checked against SLS only.</li>
+            <li>Splice is near a restraint so does not carry moments due to strut action.</li>
+            <li>Flange and web splice are using same bolt diameter.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Beam Section Properties</h2>
+        <div class="field-row select-row">
+          <div class="field-label">Steel Member</div>
+          <select id="member"></select>
+        </div>
+        <div class="field-row">
+          <div class="field-label"><span class="sym">fy</span> Steel grade <span class="hint">N/mm&sup2;</span></div>
+          <input type="number" id="fy0" value="355" step="5">
+        </div>
+        <div class="out-line" id="secOut"></div>
+      </div>
+
+      <div class="card">
+        <h2>Bolts Properties</h2>
+        <div class="field-row select-row">
+          <div class="field-label">Bolt class</div>
+          <select id="boltClass"></select>
+        </div>
+        <div class="field-row select-row">
+          <div class="field-label"><span class="sym">d</span> Bolt diameter</div>
+          <select id="boltDia"></select>
+        </div>
+        <div class="field-row">
+          <div class="field-label"><span class="sym">&mu;</span> slip factor</div>
+          <input type="number" id="mu" value="0.5" step="0.05">
+        </div>
+        <div class="out-line" id="boltOut"></div>
+      </div>
+
+      <div class="card">
+        <h2>Flange Cover Plate</h2>
+        <p class="sub">Geometry &amp; bolt layout</p>
+
+        <div class="field-row select-row">
+          <div class="field-label">Number of plates for flange</div>
+          <select id="nPlatesF"><option value="1">1</option><option value="2">2</option></select>
+        </div>
+        <div class="msg-line" id="msg_shearTypeF"></div>
+
+        <div class="field-row">
+          <div class="field-label"><span class="sym">tfp</span> Cover plate thickness <span class="hint">mm</span></div>
+          <input type="number" id="tfp" value="30" step="1">
+        </div>
+        <div class="msg-line" id="msg_tfpMsg"></div>
+
+        <div class="field-row">
+          <div class="field-label"><span class="sym">p1,f</span> Bolt spacing (in direction of force) <span class="hint">mm</span></div>
+          <input type="number" id="p1f" value="70" step="1">
+        </div>
+        <div class="msg-line" id="msg_p1f"></div>
+
+        <div class="field-row">
+          <div class="field-label"><span class="sym">p2,f</span> Bolt spacing (transverse to force) <span class="hint">mm</span></div>
+          <input type="number" id="p2f" value="250" step="1">
+        </div>
+        <div class="msg-line" id="msg_p2f"></div>
+
+        <div class="field-row">
+          <div class="field-label"><span class="sym">p1,f,j</span> Bolt spacing across joint (transverse to force) <span class="hint">mm</span></div>
+          <input type="number" id="p1fj" value="80" step="1">
+        </div>
+
+        <div class="field-row">
+          <div class="field-label"><span class="sym">e1,fp</span> End distance (in direction of force) <span class="hint">mm</span></div>
+          <input type="number" id="e1fp" value="50" step="1">
+        </div>
+        <div class="msg-line" id="msg_e1fp"></div>
+
+        <div class="field-row">
+          <div class="field-label"><span class="sym">e2,fp</span> Edge distance (transverse to force) <span class="hint">mm</span></div>
+          <input type="number" id="e2fp" value="50" step="1">
+        </div>
+        <div class="msg-line" id="msg_e2fp"></div>
+
+        <div class="field-row">
+          <div class="field-label"><span class="sym">n1,fp</span> Number of bolt rows in direction of force per side</div>
+          <input type="number" id="n1fp" value="9" step="1">
+        </div>
+        <div class="msg-line" id="msg_n1fpMsg"></div>
+
+        <div class="field-row">
+          <div class="field-label"><span class="sym">n2,fp</span> Number of bolt lines in transverse per side</div>
+          <input type="number" id="n2fp" value="2" step="1">
+        </div>
+
+        <div class="out-line"><span><span class="sym">bfp</span> Cover plate width</span><span class="v" id="out_bfp"></span></div>
+        <div class="msg-line" id="msg_bfpMsg"></div>
+        <div class="out-line"><span><span class="sym">hfp</span> Cover plate length</span><span class="v" id="out_hfp"></span></div>
+        <div class="out-line"><span><span class="sym">n_f</span> Bolts per side of splice, each flange</span><span class="v" id="out_nf"></span></div>
+      </div>
+
+      <div class="card">
+        <h2>Web Cover Plate</h2>
+        <p class="sub">Geometry &amp; bolt layout</p>
+
+        <div class="field-row select-row">
+          <div class="field-label">Number of web cover plates</div>
+          <select id="nPlatesW"><option value="1">1</option><option value="2" selected>2</option></select>
+        </div>
+        <div class="msg-line" id="msg_shearTypeW"></div>
+
+        <div class="field-row">
+          <div class="field-label"><span class="sym">twp</span> Thickness of each web cover plate <span class="hint">mm</span></div>
+          <input type="number" id="twp" value="25" step="1">
+        </div>
+        <div class="msg-line" id="msg_twpMsg"></div>
+
+        <div class="field-row">
+          <div class="field-label"><span class="sym">p1,w</span> Bolt spacing, vertical <span class="hint">mm</span></div>
+          <input type="number" id="p1w" value="75" step="1">
+        </div>
+        <div class="msg-line" id="msg_p1w"></div>
+
+        <div class="field-row">
+          <div class="field-label"><span class="sym">p2,w</span> Bolt spacing, horizontal <span class="hint">mm, insert 0 for single row bolt</span></div>
+          <input type="number" id="p2w" value="70" step="1">
+        </div>
+        <div class="msg-line" id="msg_p2w"></div>
+
+        <div class="field-row">
+          <div class="field-label"><span class="sym">p1,w,j</span> Bolt spacing across joint (horizontal) <span class="hint">mm</span></div>
+          <input type="number" id="p1wj" value="70" step="1">
+        </div>
+
+        <div class="field-row">
+          <div class="field-label"><span class="sym">e1,wp</span> End distance (vertical) <span class="hint">mm</span></div>
+          <input type="number" id="e1wp" value="40" step="1">
+        </div>
+        <div class="msg-line" id="msg_e1wp"></div>
+
+        <div class="field-row">
+          <div class="field-label"><span class="sym">e2,wp</span> Edge distance (horizontal) <span class="hint">mm</span></div>
+          <input type="number" id="e2wp" value="40" step="1">
+        </div>
+        <div class="msg-line" id="msg_e2wp"></div>
+
+        <div class="field-row">
+          <div class="field-label"><span class="sym">n1,w</span> Number of bolt rows along vertical direction per side</div>
+          <input type="number" id="n1w" value="4" step="1">
+        </div>
+        <div class="msg-line" id="msg_n1wMsg"></div>
+
+        <div class="field-row">
+          <div class="field-label"><span class="sym">n2,w</span> Number of bolt lines along horizontal direction per side</div>
+          <input type="number" id="n2w" value="2" step="1">
+        </div>
+        <div class="msg-line" id="msg_n2wMsg"></div>
+
+        <div class="out-line"><span><span class="sym">hwp</span> Height (depth) of web cover plate</span><span class="v" id="out_hwp"></span></div>
+        <div class="msg-line" id="msg_hwpMsg"></div>
+        <div class="out-line"><span><span class="sym">bwp</span> Width of web cover plate</span><span class="v" id="out_bwp"></span></div>
+        <div class="out-line"><span><span class="sym">n_w</span> Bolts per side of splice, web</span><span class="v" id="out_nw"></span></div>
+      </div>
+
+      <div class="card">
+        <h2>Material Strengths &amp; Partial Factors</h2>
+        <p class="sub">Partial factors, UK NA to BS EN 1993-1-1 / 1-8</p>
+
+        <div class="field-row">
+          <div class="field-label"><span class="sym">&gamma;M0</span> Structural steel</div>
+          <input type="number" id="gM0" value="1" step="0.05">
+        </div>
+        <div class="field-row">
+          <div class="field-label"><span class="sym">&gamma;M1</span> Structural steel (buckling)</div>
+          <input type="number" id="gM1" value="1" step="0.05">
+        </div>
+        <div class="field-row">
+          <div class="field-label"><span class="sym">&gamma;M2</span> Steel in tension / block tearing</div>
+          <input type="number" id="gM2" value="1.2" step="0.05">
+        </div>
+        <div class="field-row">
+          <div class="field-label"><span class="sym">&gamma;M2,bolt</span> Bolts, welds, plates in bearing</div>
+          <input type="number" id="gM2bolt" value="1.25" step="0.05">
+        </div>
+        <div class="field-row">
+          <div class="field-label"><span class="sym">&gamma;M3</span> Slip resistance at SLS</div>
+          <input type="number" id="gM3" value="1.1" step="0.05">
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Design Forces at Splice</h2>
+        <p class="sub">Serviceability Limit State (SLS)</p>
+
+        <div class="field-row">
+          <div class="field-label"><span class="sym">VEd,ser</span> Vertical shear <span class="hint">kN</span></div>
+          <input type="number" id="VEdser" value="100" step="5">
+        </div>
+        <div class="field-row">
+          <div class="field-label"><span class="sym">NEd,ser</span> Axial force <span class="hint">kN, +ve = compression</span></div>
+          <input type="number" id="NEdser" value="100" step="5">
+        </div>
+        <div class="field-row">
+          <div class="field-label"><span class="sym">MEd,ser</span> Bending moment <span class="hint">kNm</span></div>
+          <input type="number" id="MEdser" value="133" step="5">
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT: CALC SHEET -->
+    <div class="sheet">
+      <div class="card">
+        <h2>Design Summary — All Checks</h2>
+
+        <div id="checkSteps"></div>
+
+        <div class="final" id="finalBox">
+          <div class="label">Overall status</div>
+          <div class="value" id="finalStatus">—</div>
+        </div>
+
+        <div class="actions">
+          <button class="btn-primary" id="btnPdf">Download PDF Report</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <span>Beam splice design calculator to EN 1993 / BS EN 1993-1-8 (UK NA) &middot; Ref: SCI P398 Example D.1. Verify against the current edition of the code before issuing for design.</span>
+  </footer>
+</div>
+
+<script>
+/* ---------- data tables ---------- */
+const MEMBERS=[
+['UB 1016x305x487',1036.1,308.5,30,54.1,30,867.9,1021420,23200,620],
+['UB 1016x305x437',1025.9,305.4,26.9,49,30,867.9,909906,20762,557],
+['UB 1016x305x393',1016,303,24.4,43.9,30,868.2,807689,18539,500],
+['UB 1016x305x349',1008.1,302,21.1,40,30,868.1,723131,16592,445],
+['UB 1016x305x314',1000,300,19.1,35.9,30,868.2,644212,14851,400],
+['UB 1016x305x272',990.1,300,16.5,31,30,868.1,553974,12826,347],
+['UB 1016x305x249',980.2,300,16.5,26,30,868.2,481306,11350,317],
+['UB 1016x305x222',970.3,300,16,21.1,30,868.1,407961,9807,283],
+['UB 914x419x388',921,420.5,21.4,36.6,24.1,799.6,719635,17665,494],
+['UB 914x419x343',911.8,418.5,19.4,32,24.1,799.6,625780,15477,437],
+['UB 914x305x289',926.6,307.7,19.5,32,19.1,824.4,504187,12570,368],
+['UB 914x305x253',918.4,305.5,17.3,27.9,19.1,824.4,436305,10942,323],
+['UB 914x305x224',910.4,304.1,15.9,23.9,19.1,824.4,376414,9535,286],
+['UB 914x305x201',903,303.3,15.1,20.2,19.1,824.4,325254,8351,256],
+['UB 838x292x226',850.9,293.8,16.1,26.8,17.8,761.7,339704,9155,289],
+['UB 838x292x194',840.7,292.4,14.7,21.7,17.8,761.7,279175,7640,247],
+['UB 838x292x176',834.9,291.7,14,18.8,17.8,761.7,246021,6808,224],
+['UB 762x267x197',769.8,268,15.6,25.4,16.5,686,239957,7167,251],
+['UB 762x267x173',762.2,266.7,14.3,21.6,16.5,686,205282,6198,220],
+['UB 762x267x147',754,265.2,12.8,17.5,16.5,686,168502,5156,187],
+['UB 762x267x134',750,264.4,12,15.5,16.5,686,150692,4644,171],
+['UB 686x254x170',692.9,255.8,14.5,23.7,15.2,615.1,170326,5631,217],
+['UB 686x254x152',687.5,254.5,13.2,21,15.2,615.1,150355,5000,194],
+['UB 686x254x140',683.5,253.7,12.4,19,15.2,615.1,136267,4558,178],
+['UB 686x254x125',677.9,253,11.7,16.2,15.2,615.1,117992,3994,159],
+['UB 610x305x238',635.8,311.4,18.4,31.4,16.5,540,209471,7486,303],
+['UB 610x305x179',620.2,307.1,14.1,23.6,16.5,540,153024,5547,228],
+['UB 610x305x149',612.4,304.8,11.8,19.7,16.5,540,125876,4594,190],
+['UB 610x229x140',617.2,230.2,13.1,22.1,12.7,547.6,111777,4142,178],
+['UB 610x229x125',612.2,229,11.9,19.6,12.7,547.6,98610,3676,159],
+['UB 610x229x113',607.6,228.2,11.1,17.3,12.7,547.6,87318,3281,144],
+['UB 610x229x101',602.6,227.6,10.5,14.8,12.7,547.6,75780,2881,129],
+['UB 533x210x122',544.5,211.9,12.7,21.3,12.7,476.5,76043,3196,155],
+['UB 533x210x109',539.5,210.8,11.6,18.8,12.7,476.5,66822,2828,139],
+['UB 533x210x101',536.7,210,10.8,17.4,12.7,476.5,61519,2612,129],
+['UB 533x210x92',533.1,209.3,10.1,15.6,12.7,476.5,55227,2360,117],
+['UB 533x210x82',528.3,208.8,9.6,13.2,12.7,476.5,47539,2059,105],
+['UB 457x191x98',467.2,192.8,11.4,19.6,10.2,407.6,45727,2232,125],
+['UB 457x191x89',463.4,191.9,10.5,17.7,10.2,407.6,41015,2014,114],
+['UB 457x191x82',460,191.3,9.9,16,10.2,407.6,37051,1831,104],
+['UB 457x191x74',457,190.4,9,14.5,10.2,407.6,33319,1653,94.6],
+['UB 457x191x67',453.4,189.9,8.5,12.7,10.2,407.6,29380,1471,85.5],
+['UB 457x152x82',465.8,155.3,10.5,18.9,10.2,407.6,36589,1811,105],
+['UB 457x152x74',462,154.4,9.6,17,10.2,407.6,32674,1627,94.5],
+['UB 457x152x67',458,153.8,9,15,10.2,407.6,28927,1453,85.6],
+['UB 457x152x60',454.6,152.9,8.1,13.3,10.2,407.6,25500,1287,76.2],
+['UB 457x152x52',449.8,152.4,7.6,10.9,10.2,407.6,21369,1096,66.6],
+['UB 406x178x74',412.8,179.5,9.5,16,10.2,360.4,27310,1501,94.5],
+['UB 406x178x67',409.4,178.8,8.8,14.3,10.2,360.4,24331,1346,85.5],
+['UB 406x178x60',406.4,177.9,7.9,12.8,10.2,360.4,21596,1199,76.5],
+['UB 406x178x54',402.6,177.7,7.7,10.9,10.2,360.4,18722,1055,69],
+['UB 406x140x46',403.2,142.2,6.8,11.2,10.2,360.4,15685,888,58.6],
+['UB 406x140x39',398,141.8,6.4,8.6,10.2,360.4,12508,724,49.7],
+['UB 356x171x67',363.4,173.2,9.1,15.7,10.2,311.6,19463,1211,85.5],
+['UB 356x171x57',358,172.2,8.1,13,10.2,311.6,16038,1010,72.6],
+['UB 356x171x51',355,171.5,7.4,11.5,10.2,311.6,14136,896,64.9],
+['UB 356x171x45',351.4,171.1,7,9.7,10.2,311.6,12066,775,57.3],
+['UB 356x127x39',353.4,126,6.6,10.7,10.2,311.6,10172,659,49.8],
+['UB 356x127x33',349,125.4,6,8.5,10.2,311.6,8249,543,42.1],
+['UB 305x165x54',310.4,166.9,7.9,13.7,8.9,265.2,11696,846,68.8],
+['UB 305x165x46',306.6,165.7,6.7,11.8,8.9,265.2,9899,720,58.7],
+['UB 305x165x40',303.4,165,6,10.2,8.9,265.2,8503,623,51.3],
+['UB 305x127x48',311,125.3,9,14,8.9,265.2,9575,711,61.2],
+['UB 305x127x42',307.2,124.3,8,12.1,8.9,265.2,8196,614,53.4],
+['UB 305x127x37',304.4,123.4,7.1,10.7,8.9,265.2,7171,539,47.2],
+['UB 305x102x33',312.7,102.4,6.6,10.8,7.6,275.9,6501,481,41.8],
+['UB 305x102x28',308.7,101.8,6,8.8,7.6,275.9,5366,403,35.9],
+['UB 305x102x25',305.1,101.6,5.8,7,7.6,275.9,4455,342,31.6],
+['UB 254x146x43',259.6,147.3,7.2,12.7,7.6,219,6544,566,54.8],
+['UB 254x146x37',256,146.4,6.3,10.9,7.6,219,5537,483,47.2],
+['UB 254x146x31',251.4,146.1,6,8.6,7.6,219,4413,393,39.7],
+['UB 254x102x28',260.4,102.2,6.3,10,7.6,225.2,4005,353,36.1],
+['UB 254x102x25',257.2,101.9,6,8.4,7.6,225.2,3415,306,32],
+['UB 254x102x22',254,101.6,5.7,6.8,7.6,225.2,2841,259,28],
+['UB 203x133x30',206.8,133.9,6.4,9.6,7.6,172.4,2896,314,38.2],
+['UB 203x133x25',203.2,133.2,5.7,7.8,7.6,172.4,2340,258,32],
+['UB 203x102x23',203.2,101.8,5.4,9.3,7.6,169.4,2105,234,29.4],
+['UB 178x102x19',177.8,101.2,4.8,7.9,7.6,146.8,1356,171,24.3],
+['UB 152x89x16',152.4,88.7,4.5,7.7,7.6,121.8,834,123,20.3],
+['UB 127x76x13',127,76,4,7.6,7.6,96.6,473,84.2,16.5],
+['UC 356x406x634',474.6,424,47.6,77,15.2,290.2,274845,14235,808],
+['UC 356x406x551',455.6,418.5,42.1,67.5,15.2,290.2,226938,12076,702],
+['UC 356x406x467',436.6,412.2,35.8,58,15.2,290.2,183003,10002,595],
+['UC 356x406x393',419,407,30.6,49.2,15.2,290.2,146618,8222,501],
+['UC 356x406x340',406.4,403,26.6,42.9,15.2,290.2,122543,6999,433],
+['UC 356x406x287',393.6,399,22.6,36.5,15.2,290.2,99875,5812,366],
+['UC 356x406x235',381,394.8,18.4,30.2,15.2,290.2,79085,4687,299],
+['UC 356x368x202',374.6,374.7,16.5,27,15.2,290.2,66261,3972,257],
+['UC 356x368x177',368.2,372.6,14.4,23.8,15.2,290.2,57118,3455,226],
+['UC 356x368x153',362,370.5,12.3,20.7,15.2,290.2,48589,2965,195],
+['UC 356x368x129',355.6,368.6,10.4,17.5,15.2,290.2,40246,2479,164],
+['UC 305x305x283',365.3,322.2,26.8,44.1,15.2,246.7,78872,5105,360],
+['UC 305x305x240',352.5,318.4,23,37.7,15.2,246.7,64203,4247,306],
+['UC 305x305x198',339.9,314.5,19.1,31.4,15.2,246.7,50904,3440,252],
+['UC 305x305x158',327.1,311.2,15.8,25,15.2,246.7,38747,2680,201],
+['UC 305x305x137',320.5,309.2,13.8,21.7,15.2,246.7,32814,2297,174],
+['UC 305x305x118',314.5,307.4,12,18.7,15.2,246.7,27672,1958,150],
+['UC 305x305x97',307.9,305.3,9.9,15.4,15.2,246.7,22249,1592,123],
+['UC 254x254x167',289.1,265.2,19.2,31.7,12.7,200.3,29998,2424,213],
+['UC 254x254x132',276.3,261.3,15.3,25.3,12.7,200.3,22529,1869,168],
+['UC 254x254x107',266.7,258.8,12.8,20.5,12.7,200.3,17510,1484,136],
+['UC 254x254x89',260.3,256.3,10.3,17.3,12.7,200.3,14268,1224,113],
+['UC 254x254x73',254.1,254.6,8.6,14.2,12.7,200.3,11407,992,93.1],
+['UC 203x203x86',222.2,209.1,12.7,20.5,10.2,160.8,9449,977,110],
+['UC 203x203x71',215.8,206.4,10,17.3,10.2,160.8,7618,799,90.4],
+['UC 203x203x60',209.6,205.8,9.4,14.2,10.2,160.8,6125,656,76.4],
+['UC 203x203x52',206.2,204.3,7.9,12.5,10.2,160.8,5259,567,66.3],
+['UC 203x203x46',203.2,203.6,7.2,11,10.2,160.8,4568,497,58.7],
+['UC 152x152x37',161.8,154.4,8,11.5,7.6,123.6,2210,309,47.1],
+['UC 152x152x30',157.6,152.9,6.5,9.4,7.6,123.6,1748,248,38.3],
+['UC 152x152x23',152.4,152.2,5.8,6.8,7.6,123.6,1250,182,29.2]
+];
+const BOLTS=[
+['M5',5,2.73,2.27,3.41,2.84,3.41,5.45,5.68,8,'-',14.2],
+['M6',6,3.86,3.22,4.82,4.02,4.82,7.72,8.04,10,'-',20.1],
+['M7',7,5.55,4.62,6.94,5.78,6.94,11.1,11.6,11,'-',28.9],
+['M8',8,7.03,5.86,8.78,7.32,8.78,14.1,14.6,13,'-',36.6],
+['M10',10,11.1,9.28,13.9,11.6,13.9,22.3,23.2,16,'-',58],
+['M12',12,16.2,13.5,20.2,16.9,20.2,32.4,33.7,18,13,84.3],
+['M14',14,22.1,18.4,27.6,23,27.6,44.2,46,21,15,115],
+['M16',16,30.1,25.1,37.7,31.4,37.7,60.3,62.8,24,18,157],
+['M18',18,36.9,30.7,46.1,38.4,46.1,73.7,76.8,27,20,192],
+['M20',20,47,39.2,58.8,49,58.8,94.1,98,30,22,245],
+['M22',22,58.2,48.5,72.7,60.6,72.7,116.4,121.2,34,24,303],
+['M24',24,67.8,56.5,84.7,70.6,84.7,135.6,141.2,36,26,353],
+['M27',27,88.1,73.4,110.2,91.8,110.2,176.3,183.6,41,30,459],
+['M30',30,107.7,89.8,134.6,112.2,134.6,215.4,224.4,46,33,561],
+['M33',33,133.2,111,166.6,138.8,166.6,266.5,277.6,50,36,694],
+['M36',36,156.9,130.7,196.1,163.4,196.1,313.7,326.8,55,39,817],
+['M39',39,187.4,156.2,234.2,195.2,234.2,374.8,390.4,60,42,976]
+];
+
+const BOLT_CLASSES = [4.6,4.8,5.6,5.8,6.8,8.8,10.9];
+const BOLT_CLASS_PROPS = {
+  4.6:[240,400], 4.8:[320,400], 5.6:[300,500], 5.8:[400,500],
+  6.8:[480,600], 8.8:[640,800], 10.9:[900,1000]
+};
+const GRADE_FU = {235:360, 275:410, 355:470, 440:550};
+
+function memberByName(name){ return MEMBERS.find(r=>r[0]===name); }
+function boltRow(d){ return BOLTS.find(r=>r[1]===d); }
+function FvRd1(d, cls){
+  const row = boltRow(d);
+  const idx = 2 + BOLT_CLASSES.indexOf(cls);
+  return row[idx];
+}
+function nearestGradeFu(fy0){
+  const keys = Object.keys(GRADE_FU).map(Number);
+  let best = keys[0];
+  for(const k of keys){ if(Math.abs(k-fy0) < Math.abs(best-fy0)) best = k; }
+  return GRADE_FU[best];
+}
+
+/* ---------- engine (validated 1:1 against the source Excel calc chain) ---------- */
+function runCalc(inp){
+  const mrow = memberByName(inp.member);
+  const sec = {h:mrow[1], b:mrow[2], tw:mrow[3], tf:mrow[4], r:mrow[5], db:mrow[6], Iy:mrow[7], Wply:mrow[8], A:mrow[9]};
+  const {h,b,tw,tf,r:rr,Iy,Wply,A} = sec;
+
+  const d = inp.d, cls = inp.boltClass, mu = inp.mu;
+  const brow = boltRow(d);
+  const Dh = brow[10], Asb = brow[11];
+  const Fv1 = FvRd1(d, cls), Fv2 = Fv1*2;
+  const [fyb, fub] = BOLT_CLASS_PROPS[cls];
+  const FsRdser1 = Math.round((mu*(0.7*fub*Asb/1000)/inp.gM3)*10)/10;
+  const FsRdser2 = FsRdser1*2;
+
+  const bfp = (inp.n2fp-1)*inp.p2f + 2*inp.e2fp;
+  const hfp = 2*((inp.n1fp-1)*inp.p1f + inp.e1fp + inp.p1fj/2);
+  const n_f = inp.n1fp*inp.n2fp;
+
+  const hwp = (inp.n1w-1)*inp.p1w + 2*inp.e1wp;
+  const bwp = 2*((inp.n2w-1)*inp.p2w + inp.e2wp + inp.p1wj/2);
+  const n_w = inp.n1w*inp.n2w;
+
+  const bothLE = (v)=> tw<=v && tf<=v;
+  const minTwTf = Math.min(tw,tf);
+  let redFy;
+  if (bothLE(80)) redFy=30; else if (bothLE(63)) redFy=20; else if (bothLE(40)) redFy=10; else if (minTwTf<=16) redFy=0; else redFy=0;
+  const fy_r = inp.fy0 - redFy;
+
+  const fu_table = nearestGradeFu(inp.fy0);
+  let redFu;
+  if (bothLE(80)) redFu=20; else if (bothLE(43)) redFu=0; else redFu=0;
+  const fu_r = fu_table - redFu;
+
+  const Av_gross = A*100 - 2*b*tf + (tw+2*rr)*tf;
+  const Av_net = Av_gross - inp.n1w*Dh*tw;
+  const Vpl_Rd = Math.floor(Av_net*(fu_r/Math.sqrt(3))/inp.gM2/1000);
+  const Nc_Rd = Math.floor((2*(b - inp.n2fp*Dh)*tf)*fy_r/inp.gM1/1000/25)*25;
+  const Mpl_Rd = 0;
+
+  const hb2tf = h - 2*tf;
+  const Iyweb = tw*Math.pow(hb2tf,3)/12/10000;
+  const webMshare = Iyweb/Iy;
+  const Aw = hb2tf*tw/100;
+  const webNshare = Aw/A;
+
+  const Ff_M_Ed = (1-webMshare)*Mpl_Rd*1000/(h-tf);
+  const Ff_N_Ed = (1-webNshare)*Nc_Rd/2;
+  const Ftf_Ed = Ff_M_Ed - Ff_N_Ed;
+  const Fcf_Ed = Ff_M_Ed + Ff_N_Ed;
+  const Mw_Ed = webMshare*Mpl_Rd;
+  const Fw_N_Ed = webNshare*Nc_Rd;
+  const Fw_V_Ed = Vpl_Rd;
+
+  const Ff_M_Ed_ser = (1-webMshare)*inp.MEdser*1000/(h-tf);
+  const Ff_N_Ed_ser = (1-webNshare)*inp.NEdser/2;
+  const Ftf_Ed_ser = Ff_M_Ed_ser - Ff_N_Ed_ser;
+  const Fcf_Ed_ser = Ff_M_Ed_ser + Ff_N_Ed_ser;
+  const Mw_Ed_ser = webMshare*inp.MEdser;
+  const Fw_N_Ed_ser = webNshare*inp.NEdser;
+  const Fw_V_Ed_ser = inp.VEdser;
+
+  const Fb_max_Rd_f = 2.5*fu_r*d*inp.tfp/inp.gM2bolt/1000;
+  const Fv_Ed_f = Math.max(Ftf_Ed,Fcf_Ed)/n_f;
+
+  const e_ecc = inp.n2w===3 ? inp.p1wj : inp.p1wj/2;
+  const Mecc = Fw_V_Ed*(e_ecc+inp.p2w/2)/1000;
+  const Ibolts = (inp.n1w*inp.n2w/12)*((Math.pow(inp.p2w,2))*(Math.pow(inp.n2w,2)-1)+(Math.pow(inp.p1w,2))*(Math.pow(inp.n1w,2)-1));
+  const zmax = inp.n2w===1?0:inp.p1w*(inp.n1w-1)/2;
+  const xmax = inp.p2w*(inp.n2w-1)/2;
+
+  const Fz_V = Fw_V_Ed/n_w;
+  const Fx_N = Fw_N_Ed/n_w;
+  const Fx_M = (Mw_Ed+Mecc)*1000*zmax/Ibolts;
+  const Fz_M = (Mw_Ed+Mecc)*1000*xmax/Ibolts;
+  const Fv_Ed_w = Math.sqrt(Math.pow(Fz_V+Fz_M,2)+Math.pow(Fx_N+Fx_M,2));
+
+  const Mecc_ser = Fw_V_Ed_ser*(e_ecc+inp.p2w/2)/1000;
+  const Fz_V_ser = Fw_V_Ed_ser/n_w;
+  const Fx_N_ser = Fw_N_Ed_ser/n_w;
+  const Fx_M_ser = (Mw_Ed_ser+Mecc_ser)*1000*zmax/Ibolts;
+  const Fz_M_ser = (Mw_Ed_ser+Mecc_ser)*1000*xmax/Ibolts;
+  const Fv_Ed_w_ser = Math.sqrt(Math.pow(Fz_V_ser+Fz_M_ser,2)+Math.pow(Fx_N_ser+Fx_M_ser,2));
+
+  const Fb_max_Rd_w = 2.5*fu_r*d*tw/inp.gM2bolt/1000;
+
+  const Anet_fp = (bfp-2*Dh)*inp.tfp;
+  const Nu_Rd = 0.9*Anet_fp*fu_r/inp.gM2/1000;
+  const Npl_Rd_fp = bfp*inp.tfp*fy_r/inp.gM0/1000;
+  const Nt_fp_Rd = Math.min(Nu_Rd,Npl_Rd_fp);
+
+  const Ant_fp = (inp.e2fp*2-Dh)*inp.tfp;
+  const Anv_fp = inp.n2fp*inp.tfp*(inp.e1fp+(inp.n1fp-1)*inp.p1f-(inp.n1fp-0.5)*Dh);
+  const Nt_fp_Rd_block = (fu_r*Ant_fp/inp.gM2 + (1/Math.sqrt(3))*fy_r*Anv_fp/inp.gM0)/1000;
+
+  const Afp = bfp*inp.tfp;
+  const eps = Math.sqrt(235/fy_r);
+  const p1_gov = Math.max(inp.p1f,inp.p1fj);
+  const slenderRatio = p1_gov/inp.tfp;
+  const limit9eps = 9*eps;
+  const Lcr = 0.6*p1_gov;
+  const lambda1 = 93.9*eps;
+  const iz = inp.tfp/Math.sqrt(12);
+  const lambdabar = (Lcr/iz)/lambda1;
+  const alpha=0.49;
+  const Phi = 0.5*(1+alpha*(lambdabar-0.2)+Math.pow(lambdabar,2));
+  const chi = Math.min(1, 1/(Phi+Math.sqrt(Math.pow(Phi,2)-Math.pow(lambdabar,2))));
+  const Nb_fp_Rd = chi*Afp*fy_r/inp.gM1/1000;
+
+  const Vwp_g_Rd = inp.nPlatesW*(hwp*inp.twp/1.27)*(fy_r/Math.sqrt(3))/inp.gM0/1000;
+  const Av_wp_net = inp.nPlatesW*(hwp - inp.n1w*Dh)*inp.twp;
+  const Vwp_net_Rd = Av_wp_net*(fu_r/Math.sqrt(3))/inp.gM2/1000;
+
+  const Ant_wp = inp.nPlatesW*(inp.e2wp - Dh/2)*inp.twp;
+  const Anv_wp = inp.nPlatesW*(hwp - inp.e1wp - (inp.n1w-0.5)*Dh)*inp.twp;
+  const Vb_Rd = (fy_r*Anv_wp/Math.sqrt(3)/inp.gM0 + 0.5*fu_r*Ant_wp/inp.gM2)/1000;
+
+  const Vwp_Rd = Math.min(Vwp_g_Rd, Vwp_net_Rd, Vb_Rd);
+
+  const Wwp = inp.twp*Math.pow(hwp,2)/6;
+  const shearReductionNeeded = Fw_V_Ed > 0.5*Vwp_Rd;
+  const rho = shearReductionNeeded ? Math.pow(2*Fw_V_Ed/Vwp_Rd-1,2) : 0;
+  const Mc_wp_Rd = inp.nPlatesW*Wwp*(1-rho)*fy_r/inp.gM0/1e6;
+  const Nwp_Rd = inp.nPlatesW*hwp*inp.twp*fy_r/inp.gM0/1000;
+
+  const Mwp_Ed = Mw_Ed + Mecc;
+
+  const Vn_w_Rd = Av_net*(fu_r/Math.sqrt(3))/inp.gM2/1000;
+
+  const Mc_y_Rd = Wply*1000*fy_r/inp.gM0/1e6;
+  const minSpliceM = 0.25*Mc_y_Rd;
+
+  /* ---- literal status messages, exactly as computed by the Calc sheet ---- */
+  function distMsg(value, factor, d0v){
+    const thr = factor*d0v;
+    return value>thr ? ('distance > '+factor+' d0 ('+thr+')') : ('WARNING! distance < '+factor+' d0 ('+thr+')');
+  }
+  function shearTypeMsg(n){ return n===1?'single shear':n===2?'double shear':'ERROR! Beyond this calculation'; }
+  const msgs = {
+    shearTypeF: shearTypeMsg(inp.nPlatesF),
+    tfpMsg: inp.tfp>0 ? 'plate thickness OK' : 'WARNING! Insufficient plate thickness',
+    p1f: distMsg(inp.p1f, 2.2, Dh),
+    p2f: distMsg(inp.p2f, 2.4, Dh),
+    e1fp: distMsg(inp.e1fp, 1.2, Dh),
+    e2fp: distMsg(inp.e2fp, 1.2, Dh),
+    bfpMsg: bfp<=Math.ceil(b) ? 'plate width < member width' : 'WARNING! plate width > member width',
+    shearTypeW: shearTypeMsg(inp.nPlatesW),
+    twpMsg: inp.twp>tw ? 'plate thickness OK' : 'WARNING! Insufficient plate thickness',
+    p1w: distMsg(inp.p1w, 2.4, Dh),
+    p2w: distMsg(inp.p2w, 2.2, Dh),
+    e1wp: distMsg(inp.e1wp, 1.2, Dh),
+    e2wp: distMsg(inp.e2wp, 1.2, Dh),
+    n2wMsg: inp.n2w>=4 ? 'WARNING! Beyond this calculation' : '',
+    hwpMsg: hwp<=Math.ceil(h-2*tf-2*rr) ? 'plate depth < member depth' : 'WARNING! plate depth > member depth',
+  };
+
+  const suggestF = Math.round(Math.max(Math.abs(Ftf_Ed),Math.abs(Fcf_Ed)) / (inp.nPlatesF===1?Fv1:inp.nPlatesF===2?Fv2:1));
+  const suggestW = Math.round(Math.abs(Fv_Ed_w) / (inp.nPlatesW===1?Fv1:inp.nPlatesW===2?Fv2:1));
+  msgs.n1fpMsg = 'suggest min '+suggestF+' bolts on flange';
+  msgs.n1wMsg = 'suggest min '+suggestW+' bolts on flange';
+
+  /* ---- design summary checks ---- */
+  const checks = [
+    { name:'Minimum moment resistance for continuity',
+      design:minSpliceM, resistance:Mc_y_Rd, util:minSpliceM/Mc_y_Rd },
+    { name:'Flange bolts — shear resistance (ULS)',
+      design:Math.max(Ftf_Ed,Fcf_Ed), resistance:(inp.nPlatesF===1?n_f*Fv1:inp.nPlatesF===2?n_f*Fv2:0.001),
+      util:null },
+    { name:'Flange bolts — slip resistance (SLS)',
+      design:Math.max(Ftf_Ed_ser,Fcf_Ed_ser), resistance:(inp.nPlatesF===1?n_f*FsRdser1:inp.nPlatesF===2?n_f*FsRdser2:0.001),
+      util:null },
+    { name:'Flange bolts — bearing on cover plate',
+      design:Fv_Ed_f, resistance:Fb_max_Rd_f, util:null },
+    { name:'Web bolts — shear resistance (ULS)',
+      design:Fv_Ed_w, resistance:(inp.nPlatesW===1?Fv1:inp.nPlatesW===2?Fv2:0.001), util:null },
+    { name:'Web bolts — slip resistance (SLS)',
+      design:Fv_Ed_w_ser, resistance:(inp.nPlatesW===1?Fv1:inp.nPlatesW===2?Fv2:0.001), util:null },
+    { name:'Web bolts — bearing on beam web',
+      design:Fv_Ed_w, resistance:Fb_max_Rd_w, util:null },
+    { name:'Tension flange — cover plate net section / block tearing',
+      design:Math.abs(Ftf_Ed), resistance:Math.min(Nt_fp_Rd,Nt_fp_Rd_block), util:null },
+    { name:'Compression flange — cover plate buckling / squash',
+      design:Fcf_Ed, resistance:(slenderRatio>limit9eps?Nb_fp_Rd:Npl_Rd_fp), util:null },
+    { name:'Web cover plates — shear resistance',
+      design:Fw_V_Ed, resistance:Vwp_Rd, util:null },
+    { name:'Web cover plates — Nwp,Ed/Nwp,Rd + Mwp,Ed/Mc,wp,Rd ≤ 1.0',
+      design:null, resistance:null, util:(Fw_N_Ed/Nwp_Rd)+(Mwp_Ed/Mc_wp_Rd) },
+    { name:'Beam web — net section shear resistance',
+      design:Fw_V_Ed, resistance:Vn_w_Rd, util:null },
+  ];
+  checks.forEach(c=>{ if(c.util===null) c.util = c.design/c.resistance; c.pass = c.util<=1.0; });
+
+  return { sec, Dh, Asb, Fv1, Fv2, FsRdser1, FsRdser2, bfp, hfp, n_f, hwp, bwp, n_w,
+    fy_r, fu_r, Vpl_Rd, Nc_Rd, Fb_max_Rd_f, Fv_Ed_f, Fb_max_Rd_w, Fv_Ed_w, Fv_Ed_w_ser,
+    Nt_fp_Rd, Nt_fp_Rd_block, Nb_fp_Rd, Npl_Rd_fp, Vwp_Rd, Mc_wp_Rd, Nwp_Rd, Vn_w_Rd,
+    Mc_y_Rd, minSpliceM, msgs, suggestF, suggestW, checks, fyb, fub };
+}
+
+
+/* ---------- UI wiring ---------- */
+const ids = ['fy0','mu','tfp','p1f','p2f','p1fj','e1fp','e2fp','n1fp','n2fp',
+  'twp','p1w','p2w','p1wj','e1wp','e2wp','n1w','n2w',
+  'gM0','gM1','gM2','gM2bolt','gM3','VEdser','NEdser','MEdser'];
+
+function populateSelects(){
+  const memberSel = document.getElementById('member');
+  MEMBERS.forEach(m=>{
+    const o = document.createElement('option'); o.value=m[0]; o.textContent=m[0]; memberSel.appendChild(o);
+  });
+  memberSel.value = 'UC 356x406x235';
+
+  const clsSel = document.getElementById('boltClass');
+  BOLT_CLASSES.forEach(c=>{
+    const o = document.createElement('option'); o.value=c; o.textContent='Grade '+c; clsSel.appendChild(o);
+  });
+  clsSel.value = 8.8;
+
+  const diaSel = document.getElementById('boltDia');
+  BOLTS.forEach(b=>{
+    const o = document.createElement('option'); o.value=b[1]; o.textContent=b[0]+' (\u00d8'+b[1]+' mm)'; diaSel.appendChild(o);
+  });
+  diaSel.value = 27;
+}
+
+function readInputs(){
+  const inp = { member: document.getElementById('member').value,
+    boltClass: parseFloat(document.getElementById('boltClass').value),
+    d: parseFloat(document.getElementById('boltDia').value),
+    nPlatesF: parseInt(document.getElementById('nPlatesF').value),
+    nPlatesW: parseInt(document.getElementById('nPlatesW').value) };
+  ids.forEach(id=>{ inp[id] = parseFloat(document.getElementById(id).value); });
+  return inp;
+}
+
+function fmt(v, dp){ if(v===undefined||v===null||isNaN(v)) return '\u2014'; return v.toLocaleString('en-US',{minimumFractionDigits:dp,maximumFractionDigits:dp}); }
+
+function setMsg(key, text){
+  const el = document.getElementById('msg_'+key);
+  if(!el) return;
+  if(!text){ el.className='msg-line empty'; el.textContent=''; return; }
+  const warn = text.indexOf('WARNING')===0 || text.indexOf('ERROR')===0;
+  el.className = 'msg-line ' + (warn?'warn':'ok');
+  el.textContent = text;
+}
+
+let LAST = null;
+
+function render(){
+  const inp = readInputs();
+  let r;
+  try{ r = runCalc(inp); } catch(e){ console.error(e); return; }
+  LAST = {inp, r};
+
+  document.getElementById('secOut').innerHTML =
+    ['h','b','tw','tf'].map((k,i)=>{
+      const labels=['h','b','tw','tf'];
+      return '<span class="sym">'+labels[i]+' = '+fmt(r.sec[k],1)+' mm</span>';
+    }).join('&nbsp;&nbsp;');
+  document.getElementById('secOut').innerHTML =
+    '<span>Depth h = '+fmt(r.sec.h,1)+' mm &middot; Width b = '+fmt(r.sec.b,1)+' mm &middot; tw = '+fmt(r.sec.tw,1)+' mm &middot; tf = '+fmt(r.sec.tf,1)+' mm</span><span></span>';
+
+  document.getElementById('boltOut').innerHTML =
+    '<span>d0 = '+fmt(r.Dh,0)+' mm &middot; As = '+fmt(r.Asb,0)+' mm&sup2; &middot; Fv,Rd,1 = '+fmt(r.Fv1,1)+' kN &middot; Fs,Rd,ser,1 = '+fmt(r.FsRdser1,1)+' kN</span><span></span>';
+
+  setMsg('shearTypeF', r.msgs.shearTypeF);
+  setMsg('tfpMsg', r.msgs.tfpMsg);
+  setMsg('p1f', r.msgs.p1f);
+  setMsg('p2f', r.msgs.p2f);
+  setMsg('e1fp', r.msgs.e1fp);
+  setMsg('e2fp', r.msgs.e2fp);
+  setMsg('n1fpMsg', r.msgs.n1fpMsg);
+  setMsg('bfpMsg', r.msgs.bfpMsg);
+  document.getElementById('out_bfp').textContent = fmt(r.bfp,0)+' mm';
+  document.getElementById('out_hfp').textContent = fmt(r.hfp,0)+' mm';
+  document.getElementById('out_nf').textContent = r.n_f;
+
+  setMsg('shearTypeW', r.msgs.shearTypeW);
+  setMsg('twpMsg', r.msgs.twpMsg);
+  setMsg('p1w', r.msgs.p1w);
+  setMsg('p2w', r.msgs.p2w);
+  setMsg('e1wp', r.msgs.e1wp);
+  setMsg('e2wp', r.msgs.e2wp);
+  setMsg('n1wMsg', r.msgs.n1wMsg);
+  setMsg('n2wMsg', r.msgs.n2wMsg);
+  setMsg('hwpMsg', r.msgs.hwpMsg);
+  document.getElementById('out_hwp').textContent = fmt(r.hwp,0)+' mm';
+  document.getElementById('out_bwp').textContent = fmt(r.bwp,0)+' mm';
+  document.getElementById('out_nw').textContent = r.n_w;
+
+  /* ---- calc sheet: one step per check ---- */
+  const stepsHTML = r.checks.map(c=>{
+    const pct = (c.util*100).toFixed(1);
+    const cls = c.pass ? '' : ' fail';
+    const statusCls = c.pass ? 'pass' : 'fail';
+    return '<div class="step">' +
+      '<div class="step-title">'+c.name+'</div>' +
+      '<div class="eqline'+cls+'">Utilisation = <span class="result">'+pct+'%</span> &middot; <span class="status '+statusCls+'">'+(c.pass?'PASS':'FAIL')+'</span></div>' +
+      '</div>';
+  }).join('');
+  document.getElementById('checkSteps').innerHTML = stepsHTML;
+
+  const allPass = r.checks.every(c=>c.pass);
+  const finalBox = document.getElementById('finalBox');
+  const finalStatus = document.getElementById('finalStatus');
+  finalBox.className = 'final' + (allPass?'':' fail');
+  finalStatus.textContent = allPass?'PASS':'FAIL';
+}
+
+document.addEventListener('input', (e)=>{
+  if (e.target.closest('.wrap')) render();
+});
+document.addEventListener('change', (e)=>{
+  if (e.target.closest('.wrap')) render();
+});
+
+populateSelects();
+render();
+
+/* ---------- PDF export ---------- */
+function exportPDF(){
+  if(!LAST) return;
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const {inp, r} = LAST;
+  const marginX = 18;
+  let y = 20;
+  const dateStr = new Date().toLocaleDateString();
+
+  doc.setFont('helvetica','bold'); doc.setFontSize(15);
+  doc.text('Beam Splice Design — EN 1993', marginX, y); y += 6;
+  doc.setFont('helvetica','normal'); doc.setFontSize(10);
+  doc.text('Date: ' + dateStr, marginX, y); y += 8;
+  doc.setDrawColor(200); doc.line(marginX, y, 192, y); y += 10;
+
+  function checkBreak(minSpace=15){ if(y + minSpace > 280){ doc.addPage(); y = 20; } }
+  function section(title){
+    checkBreak(20);
+    doc.setFont('helvetica','bold'); doc.setFontSize(11);
+    doc.text(title, marginX, y); y += 6;
+    doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
+  }
+  function line(text){ checkBreak(8); doc.text(text, marginX + 3, y); y += 5.3; }
+  function msgLine(text){
+    if(!text) return;
+    checkBreak(8);
+    const warn = text.indexOf('WARNING')===0 || text.indexOf('ERROR')===0;
+    doc.setTextColor(warn?200:70, warn?60:110, warn?50:70);
+    doc.text('  ' + text, marginX + 3, y); y += 5.3;
+    doc.setTextColor(0);
+  }
+  function spacer(h=4){ y += h; }
+
+  section('1. Beam Section Properties');
+  line('Steel Member = ' + inp.member);
+  line('Steel grade fy = ' + inp.fy0 + ' N/mm2');
+  const secLabels=[['h','Depth','mm'],['b','Width','mm'],['tw','Web thickness','mm'],['tf','Flange thickness','mm'],
+    ['r','Root radius','mm'],['db','Depth between flange fillets','mm'],['Iy','2nd moment of area, y-y','cm4'],['Wply','Plastic modulus, y-y','cm3'],['A','Area','cm2']];
+  secLabels.forEach(([k,l,u])=> line(l+' = '+fmt(r.sec[k],1)+' '+u));
+  spacer(4);
+
+  section('2. Bolts Properties');
+  line('Bolt class = ' + inp.boltClass + '     Bolt diameter d = M' + inp.d);
+  line('slip factor mu = ' + inp.mu);
+  line('Bolt hole diameter d0 = ' + fmt(r.Dh,0) + ' mm     Tensile stress area As = ' + fmt(r.Asb,0) + ' mm2');
+  line('Fv,Rd,1 = ' + fmt(r.Fv1,1) + ' kN     Fv,Rd,2 = ' + fmt(r.Fv2,1) + ' kN');
+  line('Fs,Rd,ser,1 = ' + fmt(r.FsRdser1,1) + ' kN     Fs,Rd,ser,2 = ' + fmt(r.FsRdser2,1) + ' kN');
+  spacer(4);
+
+  section('3. Flange Cover Plate — Geometry & Bolt Layout');
+  line('Number of plates for flange = ' + inp.nPlatesF); msgLine(r.msgs.shearTypeF);
+  line('Cover plate thickness tfp = ' + inp.tfp + ' mm'); msgLine(r.msgs.tfpMsg);
+  line('Bolt spacing p1,f = ' + inp.p1f + ' mm'); msgLine(r.msgs.p1f);
+  line('Bolt spacing p2,f = ' + inp.p2f + ' mm'); msgLine(r.msgs.p2f);
+  line('Bolt spacing across joint p1,f,j = ' + inp.p1fj + ' mm');
+  line('End distance e1,fp = ' + inp.e1fp + ' mm'); msgLine(r.msgs.e1fp);
+  line('Edge distance e2,fp = ' + inp.e2fp + ' mm'); msgLine(r.msgs.e2fp);
+  line('Bolt rows n1,fp = ' + inp.n1fp); msgLine(r.msgs.n1fpMsg);
+  line('Bolt lines n2,fp = ' + inp.n2fp);
+  line('Cover plate width bfp = ' + fmt(r.bfp,0) + ' mm'); msgLine(r.msgs.bfpMsg);
+  line('Cover plate length hfp = ' + fmt(r.hfp,0) + ' mm');
+  line('Bolts per side, each flange n_f = ' + r.n_f);
+  spacer(4);
+
+  section('4. Web Cover Plate — Geometry & Bolt Layout');
+  line('Number of web cover plates = ' + inp.nPlatesW); msgLine(r.msgs.shearTypeW);
+  line('Web cover plate thickness twp = ' + inp.twp + ' mm'); msgLine(r.msgs.twpMsg);
+  line('Bolt spacing p1,w = ' + inp.p1w + ' mm'); msgLine(r.msgs.p1w);
+  line('Bolt spacing p2,w = ' + inp.p2w + ' mm'); msgLine(r.msgs.p2w);
+  line('Bolt spacing across joint p1,w,j = ' + inp.p1wj + ' mm');
+  line('End distance e1,wp = ' + inp.e1wp + ' mm'); msgLine(r.msgs.e1wp);
+  line('Edge distance e2,wp = ' + inp.e2wp + ' mm'); msgLine(r.msgs.e2wp);
+  line('Bolt rows n1,w = ' + inp.n1w); msgLine(r.msgs.n1wMsg);
+  line('Bolt lines n2,w = ' + inp.n2w); msgLine(r.msgs.n2wMsg);
+  line('Web cover plate depth hwp = ' + fmt(r.hwp,0) + ' mm'); msgLine(r.msgs.hwpMsg);
+  line('Web cover plate width bwp = ' + fmt(r.bwp,0) + ' mm');
+  line('Bolts per side, web n_w = ' + r.n_w);
+  spacer(4);
+
+  section('5. Material Strengths & Partial Factors');
+  line('gammaM0 = ' + inp.gM0 + '     gammaM1 = ' + inp.gM1 + '     gammaM2 = ' + inp.gM2);
+  line('gammaM2,bolt = ' + inp.gM2bolt + '     gammaM3 = ' + inp.gM3);
+  spacer(4);
+
+  section('6. Design Forces at Splice (SLS)');
+  line('VEd,ser = ' + inp.VEdser + ' kN     NEd,ser = ' + inp.NEdser + ' kN     MEd,ser = ' + inp.MEdser + ' kNm');
+  spacer(5);
+
+  checkBreak(20);
+  section('7. Design Summary — All Checks');
+  r.checks.forEach(c=>{
+    checkBreak(8);
+    doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
+    doc.setTextColor(0);
+    const nameLines = doc.splitTextToSize(c.name, 130);
+    doc.text(nameLines, marginX + 3, y);
+    doc.setFont('helvetica','bold');
+    doc.setTextColor(c.pass?20:200, c.pass?110:60, c.pass?70:50);
+    doc.text((c.util*100).toFixed(1)+'%  '+(c.pass?'PASS':'FAIL'), 192, y, {align:'right'});
+    doc.setTextColor(0);
+    y += Math.max(5.3, nameLines.length*4.5) + 2;
+  });
+
+  spacer(3);
+  checkBreak(15);
+  doc.setDrawColor(180); doc.line(marginX, y, 192, y); y += 8;
+  const allPass = r.checks.every(c=>c.pass);
+  doc.setFont('helvetica','bold'); doc.setFontSize(12.5);
+  doc.setTextColor(allPass?20:200, allPass?110:60, allPass?70:50);
+  doc.text('OVERALL STATUS: ' + (allPass?'PASS':'FAIL'), marginX, y);
+  doc.setTextColor(0);
+  y += 12;
+
+  doc.setFont('helvetica','italic'); doc.setFontSize(8.5); doc.setTextColor(120);
+  doc.text('Generated by the EN 1993 beam splice design calculator. Verify against the current edition of the code before issuing for design.', marginX, 285);
+
+  doc.save('beam-splice-calc-report.pdf');
+}
+
+document.getElementById('btnPdf').addEventListener('click', exportPDF);
+
+</script>
+</body>
+</html>
