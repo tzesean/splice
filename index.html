@@ -724,7 +724,17 @@ function runCalc(inp){
   return { sec, Dh, Asb, Fv1, Fv2, FsRdser1, FsRdser2, bfp, hfp, n_f, hwp, bwp, n_w,
     fy_r, fu_r, Vpl_Rd, Nc_Rd, Fb_max_Rd_f, Fv_Ed_f, Fb_max_Rd_w, Fv_Ed_w, Fv_Ed_w_ser,
     Nt_fp_Rd, Nt_fp_Rd_block, Nb_fp_Rd, Npl_Rd_fp, Vwp_Rd, Mc_wp_Rd, Nwp_Rd, Vn_w_Rd,
-    Mc_y_Rd, minSpliceM, msgs, suggestF, suggestW, checks, fyb, fub };
+    Mc_y_Rd, minSpliceM, msgs, suggestF, suggestW, checks, fyb, fub,
+    Mpl_Rd, hb2tf, Iyweb, webMshare, Aw, webNshare,
+    Ff_M_Ed, Ff_N_Ed, Ftf_Ed, Fcf_Ed, Mw_Ed, Fw_N_Ed, Fw_V_Ed,
+    Ff_M_Ed_ser, Ff_N_Ed_ser, Ftf_Ed_ser, Fcf_Ed_ser, Mw_Ed_ser, Fw_N_Ed_ser, Fw_V_Ed_ser,
+    e_ecc, Mecc, Ibolts, zmax, xmax, Fz_V, Fx_N, Fx_M, Fz_M,
+    Mecc_ser, Fz_V_ser, Fx_N_ser, Fx_M_ser, Fz_M_ser,
+    Anet_fp, Nu_Rd, Ant_fp, Anv_fp,
+    Afp, eps, p1_gov, slenderRatio, limit9eps, Lcr, lambda1, iz, lambdabar, Phi, chi,
+    Vwp_g_Rd, Av_wp_net, Vwp_net_Rd, Ant_wp, Anv_wp, Vb_Rd,
+    Wwp, shearReductionNeeded, rho, Mwp_Ed,
+    Av_gross, Av_net, redFy, redFu, fu_table };
 }
 
 
@@ -854,115 +864,372 @@ function exportPDF(){
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const {inp, r} = LAST;
   const marginX = 18;
+  const rightX = 192;
   let y = 20;
   const dateStr = new Date().toLocaleDateString();
 
-  doc.setFont('helvetica','bold'); doc.setFontSize(15);
-  doc.text('Beam Splice Design — EN 1993', marginX, y); y += 6;
-  doc.setFont('helvetica','normal'); doc.setFontSize(10);
-  doc.text('Date: ' + dateStr, marginX, y); y += 8;
-  doc.setDrawColor(200); doc.line(marginX, y, 192, y); y += 10;
-
   function checkBreak(minSpace=15){ if(y + minSpace > 280){ doc.addPage(); y = 20; } }
-  function section(title){
-    checkBreak(20);
-    doc.setFont('helvetica','bold'); doc.setFontSize(11);
-    doc.text(title, marginX, y); y += 6;
-    doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
+
+  function h1(text){
+    doc.setFont('helvetica','bold'); doc.setFontSize(15);
+    doc.setTextColor(0);
+    doc.text(text, marginX, y); y += 6;
+    doc.setFont('helvetica','normal'); doc.setFontSize(10);
   }
-  function line(text){ checkBreak(8); doc.text(text, marginX + 3, y); y += 5.3; }
+  function section(title){
+    checkBreak(16);
+    y += 2;
+    doc.setFont('helvetica','bold'); doc.setFontSize(11);
+    doc.setTextColor(0);
+    doc.text(title, marginX, y); y += 5;
+    doc.setDrawColor(160); doc.line(marginX, y, rightX, y); y += 4.5;
+    doc.setFont('helvetica','normal'); doc.setFontSize(9);
+  }
+  function subsection(title){
+    checkBreak(9);
+    doc.setFont('helvetica','bold'); doc.setFontSize(9);
+    doc.setTextColor(60);
+    doc.text(title, marginX, y); y += 4.5;
+    doc.setFont('helvetica','normal'); doc.setFontSize(9);
+    doc.setTextColor(0);
+  }
+  // one calc row: label (with symbol) on the left, value+unit right-aligned, formula (if any) directly below in grey
+  function row(label, sym, value, dp, unit, formula){
+    checkBreak(7);
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.7);
+    doc.setTextColor(40);
+    const labelText = sym ? (label + '  (' + sym + ')') : label;
+    const labelLines = doc.splitTextToSize(labelText, 116);
+    doc.text(labelLines, marginX, y);
+    doc.setFont('courier','bold'); doc.setFontSize(8.7);
+    doc.setTextColor(0);
+    const valText = (typeof value === 'number' ? fmt(value, dp==null?2:dp) : String(value)) + (unit?(' '+unit):'');
+    doc.text(valText, rightX, y, {align:'right'});
+    y += Math.max(4.4, labelLines.length*3.9) + 0.4;
+    if(formula){
+      doc.setFont('courier','normal'); doc.setFontSize(7.4);
+      doc.setTextColor(120);
+      const fLines = doc.splitTextToSize(formula, rightX - marginX - 4);
+      doc.text(fLines, marginX + 4, y);
+      y += fLines.length*3.3 + 1.2;
+      doc.setTextColor(0);
+    }
+  }
+  // status/warning line, colour matches on-screen mint-green / warning
   function msgLine(text){
     if(!text) return;
-    checkBreak(8);
+    checkBreak(6);
     const warn = text.indexOf('WARNING')===0 || text.indexOf('ERROR')===0;
-    doc.setTextColor(warn?200:70, warn?60:110, warn?50:70);
-    doc.text('  ' + text, marginX + 3, y); y += 5.3;
+    doc.setFont('courier','normal'); doc.setFontSize(7.6);
+    if(warn) doc.setTextColor(200,60,50); else doc.setTextColor(20,120,70);
+    doc.text('  ' + text, marginX + 2, y); y += 3.9;
     doc.setTextColor(0);
   }
-  function spacer(h=4){ y += h; }
-
-  section('1. Beam Section Properties');
-  line('Steel Member = ' + inp.member);
-  line('Steel grade fy = ' + inp.fy0 + ' N/mm2');
-  const secLabels=[['h','Depth','mm'],['b','Width','mm'],['tw','Web thickness','mm'],['tf','Flange thickness','mm'],
-    ['r','Root radius','mm'],['db','Depth between flange fillets','mm'],['Iy','2nd moment of area, y-y','cm4'],['Wply','Plastic modulus, y-y','cm3'],['A','Area','cm2']];
-  secLabels.forEach(([k,l,u])=> line(l+' = '+fmt(r.sec[k],1)+' '+u));
-  spacer(4);
-
-  section('2. Bolts Properties');
-  line('Bolt class = ' + inp.boltClass + '     Bolt diameter d = M' + inp.d);
-  line('slip factor mu = ' + inp.mu);
-  line('Bolt hole diameter d0 = ' + fmt(r.Dh,0) + ' mm     Tensile stress area As = ' + fmt(r.Asb,0) + ' mm2');
-  line('Fv,Rd,1 = ' + fmt(r.Fv1,1) + ' kN     Fv,Rd,2 = ' + fmt(r.Fv2,1) + ' kN');
-  line('Fs,Rd,ser,1 = ' + fmt(r.FsRdser1,1) + ' kN     Fs,Rd,ser,2 = ' + fmt(r.FsRdser2,1) + ' kN');
-  spacer(4);
-
-  section('3. Flange Cover Plate — Geometry & Bolt Layout');
-  line('Number of plates for flange = ' + inp.nPlatesF); msgLine(r.msgs.shearTypeF);
-  line('Cover plate thickness tfp = ' + inp.tfp + ' mm'); msgLine(r.msgs.tfpMsg);
-  line('Bolt spacing p1,f = ' + inp.p1f + ' mm'); msgLine(r.msgs.p1f);
-  line('Bolt spacing p2,f = ' + inp.p2f + ' mm'); msgLine(r.msgs.p2f);
-  line('Bolt spacing across joint p1,f,j = ' + inp.p1fj + ' mm');
-  line('End distance e1,fp = ' + inp.e1fp + ' mm'); msgLine(r.msgs.e1fp);
-  line('Edge distance e2,fp = ' + inp.e2fp + ' mm'); msgLine(r.msgs.e2fp);
-  line('Bolt rows n1,fp = ' + inp.n1fp); msgLine(r.msgs.n1fpMsg);
-  line('Bolt lines n2,fp = ' + inp.n2fp);
-  line('Cover plate width bfp = ' + fmt(r.bfp,0) + ' mm'); msgLine(r.msgs.bfpMsg);
-  line('Cover plate length hfp = ' + fmt(r.hfp,0) + ' mm');
-  line('Bolts per side, each flange n_f = ' + r.n_f);
-  spacer(4);
-
-  section('4. Web Cover Plate — Geometry & Bolt Layout');
-  line('Number of web cover plates = ' + inp.nPlatesW); msgLine(r.msgs.shearTypeW);
-  line('Web cover plate thickness twp = ' + inp.twp + ' mm'); msgLine(r.msgs.twpMsg);
-  line('Bolt spacing p1,w = ' + inp.p1w + ' mm'); msgLine(r.msgs.p1w);
-  line('Bolt spacing p2,w = ' + inp.p2w + ' mm'); msgLine(r.msgs.p2w);
-  line('Bolt spacing across joint p1,w,j = ' + inp.p1wj + ' mm');
-  line('End distance e1,wp = ' + inp.e1wp + ' mm'); msgLine(r.msgs.e1wp);
-  line('Edge distance e2,wp = ' + inp.e2wp + ' mm'); msgLine(r.msgs.e2wp);
-  line('Bolt rows n1,w = ' + inp.n1w); msgLine(r.msgs.n1wMsg);
-  line('Bolt lines n2,w = ' + inp.n2w); msgLine(r.msgs.n2wMsg);
-  line('Web cover plate depth hwp = ' + fmt(r.hwp,0) + ' mm'); msgLine(r.msgs.hwpMsg);
-  line('Web cover plate width bwp = ' + fmt(r.bwp,0) + ' mm');
-  line('Bolts per side, web n_w = ' + r.n_w);
-  spacer(4);
-
-  section('5. Material Strengths & Partial Factors');
-  line('gammaM0 = ' + inp.gM0 + '     gammaM1 = ' + inp.gM1 + '     gammaM2 = ' + inp.gM2);
-  line('gammaM2,bolt = ' + inp.gM2bolt + '     gammaM3 = ' + inp.gM3);
-  spacer(4);
-
-  section('6. Design Forces at Splice (SLS)');
-  line('VEd,ser = ' + inp.VEdser + ' kN     NEd,ser = ' + inp.NEdser + ' kN     MEd,ser = ' + inp.MEdser + ' kNm');
-  spacer(5);
-
-  checkBreak(20);
-  section('7. Design Summary — All Checks');
-  r.checks.forEach(c=>{
+  function noteLine(text){
+    checkBreak(9);
+    doc.setFont('helvetica','italic'); doc.setFontSize(7.4);
+    doc.setTextColor(110);
+    const lines = doc.splitTextToSize(text, rightX - marginX);
+    doc.text(lines, marginX, y); y += lines.length*3.3 + 1.8;
+    doc.setTextColor(0);
+  }
+  function checkTableHeader(){
     checkBreak(8);
-    doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
+    doc.setFont('helvetica','bold'); doc.setFontSize(7.8);
+    doc.setTextColor(110);
+    doc.text('Check', marginX, y);
+    doc.text('Design', rightX-62, y, {align:'right'});
+    doc.text('Resistance', rightX-32, y, {align:'right'});
+    doc.text('Util.', rightX, y, {align:'right'});
+    y += 3.6;
+    doc.setDrawColor(210); doc.line(marginX, y, rightX, y); y += 3.2;
     doc.setTextColor(0);
-    const nameLines = doc.splitTextToSize(c.name, 130);
-    doc.text(nameLines, marginX + 3, y);
-    doc.setFont('helvetica','bold');
-    doc.setTextColor(c.pass?20:200, c.pass?110:60, c.pass?70:50);
-    doc.text((c.util*100).toFixed(1)+'%  '+(c.pass?'PASS':'FAIL'), 192, y, {align:'right'});
+  }
+  function checkRow(name, design, resistance, util, pass){
+    checkBreak(7);
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.1);
+    doc.setTextColor(30);
+    const nameLines = doc.splitTextToSize(name, 92);
+    doc.text(nameLines, marginX, y);
+    doc.setFont('courier','normal'); doc.setFontSize(7.8);
+    doc.text(design!=null ? fmt(design,1) : '-', rightX-62, y, {align:'right'});
+    doc.text(resistance!=null ? fmt(resistance,1) : '-', rightX-32, y, {align:'right'});
+    doc.setFont('courier','bold');
+    doc.setTextColor(pass?20:200, pass?120:60, pass?70:50);
+    doc.text((util*100).toFixed(1)+'%  '+(pass?'PASS':'FAIL'), rightX, y, {align:'right'});
     doc.setTextColor(0);
-    y += Math.max(5.3, nameLines.length*4.5) + 2;
-  });
+    y += Math.max(4.2, nameLines.length*3.8) + 1.3;
+  }
 
-  spacer(3);
-  checkBreak(15);
-  doc.setDrawColor(180); doc.line(marginX, y, 192, y); y += 8;
+  /* ============ COVER ============ */
+  h1('EN 1993 BEAM SPLICE DESIGN');
+  doc.setTextColor(120); doc.setFontSize(9);
+  doc.text('Ref: SCI P398 Example D.1  -  Date: ' + dateStr, marginX, y); y += 7;
+  doc.setTextColor(0);
+
+  noteLine('Bolted cover-plate splice connecting two beam sections. Based on SCI P398 "Joints in Steel Construction - Moment Connections" Example D.1. Carries section moment and shear capacity. Bolt slip resistance checked against SLS only. Splice is near a restraint so does not carry moments due to strut action. Flange and web splice are using same bolt diameter.');
+
+  /* ============ BEAM SECTION PROPERTIES ============ */
+  section('BEAM SECTION PROPERTIES');
+  row('Steel Member', null, inp.member, null, '');
+  row('Steel grade', 'fy', inp.fy0, 0, 'N/mm2');
+  row('Depth', 'h', r.sec.h, 1, 'mm');
+  row('Width', 'b', r.sec.b, 1, 'mm');
+  row('Web thickness', 'tw', r.sec.tw, 1, 'mm');
+  row('Flange thickness', 'tf', r.sec.tf, 1, 'mm');
+  row('Root radius', 'r', r.sec.r, 1, 'mm');
+  row('Depth between flange fillets', 'db', r.sec.db, 1, 'mm');
+  row('2nd moment of area, y-y', 'Iy', r.sec.Iy, 0, 'cm4');
+  row('Plastic modulus, y-y', 'Wpl,y', r.sec.Wply, 0, 'cm3');
+  row('Area', 'A', r.sec.A, 0, 'cm2');
+
+  /* ============ BOLTS PROPERTIES ============ */
+  section('BOLTS  PROPERTIES');
+  row('Bolt class', null, inp.boltClass, null, '');
+  row('Bolt diameter', 'd', inp.d, 0, 'mm');
+  row('slip factor', 'mu', inp.mu, 2, '');
+  row('Bolt hole diameter', 'd0', r.Dh, 0, 'mm');
+  row('Tensile stress area', 'As', r.Asb, 0, 'mm2');
+  row('Shear resistance, single shear (ULS)', 'Fv,Rd,1', r.Fv1, 1, 'kN', null); noteLine('Source: SCI P363 resistance tables');
+  row('Shear resistance, double shear (ULS)', 'Fv,Rd,2', r.Fv2, 1, 'kN', 'Fv,Rd,2 = 2 x Fv,Rd,1');
+  row('Slip resistance, single shear (SLS, Class A)', 'Fs,Rd,ser,1', r.FsRdser1, 1, 'kN', 'Fs,Rd,ser,1 = mu x (0.7 x fub x As) / gammaM3');
+  row('Slip resistance, double shear (SLS, Class A)', 'Fs,Rd,ser,2', r.FsRdser2, 1, 'kN', 'Fs,Rd,ser,2 = 2 x Fs,Rd,ser,1');
+
+  /* ============ FLANGE COVER PLATE ============ */
+  section('FLANGE COVER PLATE - GEOMETRY & BOLT LAYOUT');
+  row('Number of plates for flange', null, inp.nPlatesF, null, ''); msgLine(r.msgs.shearTypeF);
+  row('Cover plate thickness', 'tfp', inp.tfp, 0, 'mm'); msgLine(r.msgs.tfpMsg);
+  row('Bolt spacing (in direction of force)', 'p1,f', inp.p1f, 0, 'mm'); msgLine(r.msgs.p1f);
+  row('Bolt spacing (transverse to force)', 'p2,f', inp.p2f, 0, 'mm'); msgLine(r.msgs.p2f);
+  row('Bolt spacing across joint (transverse to force)', 'p1,f,j', inp.p1fj, 0, 'mm');
+  row('End distance (in direction of force)', 'e1,fp', inp.e1fp, 0, 'mm'); msgLine(r.msgs.e1fp);
+  row('Edge distance (transverse to force)', 'e2,fp', inp.e2fp, 0, 'mm'); msgLine(r.msgs.e2fp);
+  row('Number of bolt rows in direction of force per side', 'n1,fp', inp.n1fp, 0, ''); msgLine(r.msgs.n1fpMsg);
+  row('Number of bolt lines in transverse per side', 'n2,fp', inp.n2fp, 0, '');
+  row('Cover plate width', 'bfp', r.bfp, 0, 'mm', 'bfp = (n2,fp - 1) x p2,f + 2 x e2,fp'); msgLine(r.msgs.bfpMsg);
+  row('Cover plate length', 'hfp', r.hfp, 0, 'mm', 'hfp = 2 x [(n1,fp - 1) x p1,f + e1,fp + p1,f,j/2]');
+  row('Bolts per side of splice, each flange', 'n_f', r.n_f, 0, '', 'n_f = n1,fp x n2,fp');
+
+  /* ============ WEB COVER PLATE ============ */
+  section('WEB COVER PLATE - GEOMETRY & BOLT LAYOUT');
+  row('Number of web cover plates', null, inp.nPlatesW, null, ''); msgLine(r.msgs.shearTypeW);
+  row('Thickness of each web cover plate', 'twp', inp.twp, 0, 'mm'); msgLine(r.msgs.twpMsg);
+  row('Bolt spacing, vertical', 'p1,w', inp.p1w, 0, 'mm'); msgLine(r.msgs.p1w);
+  row('Bolt spacing, horizontal', 'p2,w', inp.p2w, 0, 'mm'); msgLine(r.msgs.p2w);
+  row('Bolt spacing across joint (horizontal)', 'p1,w,j', inp.p1wj, 0, 'mm');
+  row('End distance (vertical)', 'e1,wp', inp.e1wp, 0, 'mm'); msgLine(r.msgs.e1wp);
+  row('Edge distance (horizontal)', 'e2,wp', inp.e2wp, 0, 'mm'); msgLine(r.msgs.e2wp);
+  row('Number of bolt rows along vertical direction per side', 'n1,w', inp.n1w, 0, ''); msgLine(r.msgs.n1wMsg);
+  row('Number of bolt lines along horizontal direction per side', 'n2,w', inp.n2w, 0, ''); msgLine(r.msgs.n2wMsg);
+  row('Height (depth) of web cover plate', 'hwp', r.hwp, 0, 'mm', 'hwp = (n1,w - 1) x p1,w + 2 x e1,wp'); msgLine(r.msgs.hwpMsg);
+  row('Width of web cover plate', 'bwp', r.bwp, 0, 'mm', 'bwp = 2 x [(n2,w - 1) x p2,w + e2,wp + p1,w,j/2]');
+  row('Bolts per side of splice, web', 'n_w', r.n_w, 0, '', 'n_w = n1,w x n2,w');
+
+  /* ============ MATERIAL STRENGTHS & PARTIAL FACTORS ============ */
+  section('MATERIAL STRENGTHS & PARTIAL FACTORS');
+  subsection('Partial factors (UK NA to BS EN 1993-1-1 / 1-8)');
+  row('Structural steel', 'gammaM0', inp.gM0, 2, '-');
+  row('Structural steel (buckling)', 'gammaM1', inp.gM1, 2, '-');
+  row('Steel in tension / block tearing (from BS EN 1993-1-1 NA)', 'gammaM2', inp.gM2, 2, '-');
+  row('Bolts, welds, plates in bearing', 'gammaM2,bolt', inp.gM2bolt, 2, '-');
+  row('Slip resistance at SLS', 'gammaM3', inp.gM3, 2, '-');
+  subsection('Steel (beam & cover plates)');
+  row('Yield strength', 'fy', r.fy_r, 0, 'N/mm2', 'fy = nominal fy - thickness reduction  (per min(tw,tf) band)'); noteLine('BS EN 10025-2, Table 7');
+  row('Ultimate strength', 'fu', r.fu_r, 0, 'N/mm2', 'fu = grade fu - thickness reduction  (per min(tw,tf) band)'); noteLine('BS EN 10025-2, Table 7');
+  subsection('Bolts (Grade ' + inp.boltClass + ' preloaded)');
+  row('Nominal yield strength', 'fyb', r.fyb, 0, 'N/mm2');
+  row('Nominal ultimate strength', 'fub', r.fub, 0, 'N/mm2');
+
+  /* ============ DESIGN FORCES AT SPLICE ============ */
+  section('DESIGN FORCES AT SPLICE');
+  subsection('Section Capacity for Splice Design');
+  row('Shear Design Resistance', 'Vpl,Rd', r.Vpl_Rd, 0, 'kN', 'Vpl,Rd = Av,net x (fu / sqrt(3)) / gammaM2');
+  row('Positive Axial Force (Eff area at flange only)', 'Nc,Rd', r.Nc_Rd, 0, 'kN', 'Nc,Rd = 2 x (b - n2,fp x d0) x tf x fy / gammaM1   (rounded down to nearest 25 kN)');
+  row('Bending moment', 'Mpl,Rd', r.Mpl_Rd, 0, 'kNm'); noteLine('Max axial = moment capacity thus Mpl,Rd = 0');
+  subsection('Serviceability Limit State (SLS)');
+  row('Vertical shear', 'VEd,ser', inp.VEdser, 0, 'kN');
+  row('Axial force (+ve = compression)', 'NEd,ser', inp.NEdser, 0, 'kN');
+  row('Bending moment', 'MEd,ser', inp.MEdser, 0, 'kNm');
+
+  /* ============ MINIMUM REQUIREMENTS FOR CONTINUITY ============ */
+  section('MINIMUM REQUIREMENTS FOR CONTINUITY (major axis)');
+  row('Bending resistance of beam (plastic, major axis)', 'Mc,y,Rd', r.Mc_y_Rd, 3, 'kNm', 'Mc,y,Rd = Wpl,y x fy / gammaM0');
+  row('Minimum splice moment resistance required', '0.25 Mc,y,Rd', r.minSpliceM, 3, 'kNm', '0.25 x Mc,y,Rd');
+  noteLine('BS EN 1993-1-8 6.2.7.1(13), applied by analogy to flexural splices');
+  checkTableHeader();
+  checkRow(r.checks[0].name, r.checks[0].design, r.checks[0].resistance, r.checks[0].util, r.checks[0].pass);
+
+  /* ============ DISTRIBUTION OF INTERNAL FORCES ============ */
+  section('DISTRIBUTION OF INTERNAL FORCES');
+  subsection('Web / flange share of second moment of area and axial area');
+  row('Depth between flange faces', 'hb-2tf', r.hb2tf, 1, 'mm', 'hb - 2tf');
+  row('2nd moment of area of web', 'Iy,web', r.Iyweb, 0, 'cm4', 'Iy,web = tw x (hb-2tf)^3 / 12');
+  row('Proportion of moment carried by web', 'Iy,web/Iy', r.webMshare, 4, '', 'Iy,web / Iy');
+  row('Area of web', 'Aw', r.Aw, 1, 'cm2', 'Aw = (hb-2tf) x tw / 100');
+  row('Proportion of axial force carried by web', 'Aw/A', r.webNshare, 4, '', 'Aw / A');
+  subsection('Forces at ULS');
+  row('Force in each flange due to moment', 'Ff,M,Ed', r.Ff_M_Ed, 1, 'kN', 'Ff,M,Ed = (1 - Iy,web/Iy) x Mpl,Rd x 1000 / (h - tf)');
+  row('Force in each flange due to axial force', 'Ff,N,Ed', r.Ff_N_Ed, 1, 'kN', 'Ff,N,Ed = (1 - Aw/A) x Nc,Rd / 2');
+  row('Total force, TENSION flange', 'Ftf,Ed', r.Ftf_Ed, 1, 'kN', 'Ftf,Ed = Ff,M,Ed - Ff,N,Ed');
+  row('Total force, COMPRESSION flange', 'Fcf,Ed', r.Fcf_Ed, 1, 'kN', 'Fcf,Ed = Ff,M,Ed + Ff,N,Ed');
+  row('Moment in web (at splice centreline)', 'Mw,Ed', r.Mw_Ed, 3, 'kNm', 'Mw,Ed = (Iy,web/Iy) x Mpl,Rd');
+  row('Axial force in web', 'Fw,N,Ed', r.Fw_N_Ed, 1, 'kN', 'Fw,N,Ed = (Aw/A) x Nc,Rd');
+  row('Shear force in web', 'Fw,V,Ed', r.Fw_V_Ed, 1, 'kN', 'Fw,V,Ed = Vpl,Rd');
+  subsection('Forces at SLS');
+  row('Force in each flange due to moment', 'Ff,M,Ed,ser', r.Ff_M_Ed_ser, 1, 'kN', 'Ff,M,Ed,ser = (1 - Iy,web/Iy) x MEd,ser x 1000 / (h - tf)');
+  row('Force in each flange due to axial force', 'Ff,N,Ed,ser', r.Ff_N_Ed_ser, 1, 'kN', 'Ff,N,Ed,ser = (1 - Aw/A) x NEd,ser / 2');
+  row('Total force, TENSION flange', 'Ftf,Ed,ser', r.Ftf_Ed_ser, 1, 'kN', 'Ftf,Ed,ser = Ff,M,Ed,ser - Ff,N,Ed,ser');
+  row('Total force, COMPRESSION flange', 'Fcf,Ed,ser', r.Fcf_Ed_ser, 1, 'kN', 'Fcf,Ed,ser = Ff,M,Ed,ser + Ff,N,Ed,ser');
+  row('Moment in web', 'Mw,Ed,ser', r.Mw_Ed_ser, 3, 'kNm', 'Mw,Ed,ser = (Iy,web/Iy) x MEd,ser');
+  row('Axial force in web', 'Fw,N,Ed,ser', r.Fw_N_Ed_ser, 1, 'kN', 'Fw,N,Ed,ser = (Aw/A) x NEd,ser');
+  row('Shear force in web', 'Fw,V,Ed,ser', r.Fw_V_Ed_ser, 1, 'kN', 'Fw,V,Ed,ser = VEd,ser');
+
+  /* ============ FLANGE BOLT GROUP ============ */
+  section('FLANGE BOLT GROUP');
+  row('Full bearing resistance, bolt in flange cover plate', 'Fb,max,Rd,f', r.Fb_max_Rd_f, 1, 'kN', 'Fb,max,Rd,f = 2.5 x fu x d x tfp / gammaM2,bolt'); noteLine('Upper bound, Table 3.4');
+  row('Max. bolt force, flange (governs = larger of Ftf,Fcf)', 'Fv,Ed,f', r.Fv_Ed_f, 1, 'kN', 'Fv,Ed,f = MAX(Ftf,Ed, Fcf,Ed) / n_f');
+  checkTableHeader();
+  checkRow(r.checks[1].name, r.checks[1].design, r.checks[1].resistance, r.checks[1].util, r.checks[1].pass);
+  checkRow(r.checks[2].name, r.checks[2].design, r.checks[2].resistance, r.checks[2].util, r.checks[2].pass);
+  checkRow(r.checks[3].name, r.checks[3].design, r.checks[3].resistance, r.checks[3].util, r.checks[3].pass);
+  noteLine('Bearing resistance shown is the full (unreduced) value from Table 3.4; valid provided actual end/edge/pitch distances meet or exceed the Table 3.4 minima (3d0, 1.5d0, etc.).');
+
+  /* ============ WEB BOLT GROUP ============ */
+  section('WEB BOLT GROUP (double vertical line of bolts)');
+  row('Eccentricity of bolt group from splice centreline', 'e', r.e_ecc, 1, 'mm', 'e = p1,w,j / 2   (= p1,w,j if n2,w = 3)');
+  row('Additional moment due to eccentricity (ULS)', 'Mecc = Ve', r.Mecc, 3, 'kNm', 'Mecc = Fw,V,Ed x (e + p2,w/2)');
+  row('Polar 2nd moment of area of bolt group (one side)', 'Ibolts', r.Ibolts, 0, 'mm2', 'Ibolts = (n1,w x n2,w/12) x [(p2,w^2)(n2,w^2-1) + (p1,w^2)(n1,w^2-1)]');
+  row('Vertical distance of extreme bolt from centroid', 'zmax', r.zmax, 1, 'mm', 'zmax = p1,w x (n1,w - 1) / 2');
+  row('Horizontal distance of extreme bolt from centroid', 'xmax', r.xmax, 1, 'mm', 'xmax = p2,w x (n2,w - 1) / 2');
+  subsection('Bolt forces - ULS');
+  row('Vertical force / bolt due to shear', 'Fz,V', r.Fz_V, 2, 'kN', 'Fz,V = Fw,V,Ed / n_w');
+  row('Horizontal force / bolt due to axial force', 'Fx,N', r.Fx_N, 2, 'kN', 'Fx,N = Fw,N,Ed / n_w');
+  row('Horizontal force on extreme bolt due to moment', 'Fx,M', r.Fx_M, 2, 'kN', 'Fx,M = (Mw,Ed + Mecc) x 1000 x zmax / Ibolts');
+  row('Vertical force on extreme bolt due to moment', 'Fz,M', r.Fz_M, 2, 'kN', 'Fz,M = (Mw,Ed + Mecc) x 1000 x xmax / Ibolts');
+  row('Resultant force on most highly loaded bolt', 'Fv,Ed,w', r.Fv_Ed_w, 2, 'kN', 'Fv,Ed,w = sqrt[(Fz,V+Fz,M)^2 + (Fx,N+Fx,M)^2]');
+  subsection('Bolt forces - SLS');
+  row('Additional moment due to eccentricity (SLS)', 'Mecc,ser', r.Mecc_ser, 3, 'kNm', 'Mecc,ser = Fw,V,Ed,ser x (e + p2,w/2)');
+  row('Vertical force / bolt due to shear', 'Fz,V,ser', r.Fz_V_ser, 2, 'kN', 'Fz,V,ser = Fw,V,Ed,ser / n_w');
+  row('Horizontal force / bolt due to axial force', 'Fx,N,ser', r.Fx_N_ser, 2, 'kN', 'Fx,N,ser = Fw,N,Ed,ser / n_w');
+  row('Horizontal force on extreme bolt due to moment', 'Fx,M,ser', r.Fx_M_ser, 2, 'kN', 'Fx,M,ser = (Mw,Ed,ser + Mecc,ser) x 1000 x zmax / Ibolts');
+  row('Vertical force on extreme bolt due to moment', 'Fz,M,ser', r.Fz_M_ser, 2, 'kN', 'Fz,M,ser = (Mw,Ed,ser + Mecc,ser) x 1000 x xmax / Ibolts');
+  row('Resultant force on most highly loaded bolt', 'Fv,Ed,w,ser', r.Fv_Ed_w_ser, 2, 'kN', 'Fv,Ed,w,ser = sqrt[(Fz,V,ser+Fz,M,ser)^2 + (Fx,N,ser+Fx,M,ser)^2]');
+  row('Full bearing resistance, bolt in web (double shear path)', 'Fb,max,Rd,w', r.Fb_max_Rd_w, 1, 'kN', 'Fb,max,Rd,w = 2.5 x fu x d x tw / gammaM2,bolt');
+  checkTableHeader();
+  checkRow(r.checks[4].name, r.checks[4].design, r.checks[4].resistance, r.checks[4].util, r.checks[4].pass);
+  checkRow(r.checks[5].name, r.checks[5].design, r.checks[5].resistance, r.checks[5].util, r.checks[5].pass);
+  checkRow(r.checks[6].name, r.checks[6].design, r.checks[6].resistance, r.checks[6].util, r.checks[6].pass);
+  noteLine('Bearing check uses the full (unreduced) resistance from Table 3.4; assumes the chosen end/edge/pitch distances meet Table 3.4 minima so bearing does not govern.');
+
+  /* ============ TENSION FLANGE COVER PLATE ============ */
+  section('RESISTANCE OF TENSION FLANGE COVER PLATE');
+  subsection('Net section resistance (single cover plate)');
+  row('Net area of flange cover plate', 'Anet,fp', r.Anet_fp, 0, 'mm2', 'Anet,fp = (bfp - 2d0) x tfp');
+  row('Ultimate resistance of net section', 'Nu,Rd', r.Nu_Rd, 1, 'kN', 'Nu,Rd = 0.9 x Anet,fp x fu / gammaM2');
+  row('Plastic resistance of gross section', 'Npl,Rd', r.Npl_Rd_fp, 1, 'kN', 'Npl,Rd = bfp x tfp x fy / gammaM0');
+  row('Design tension resistance of cover plate', 'Nt,fp,Rd', r.Nt_fp_Rd, 1, 'kN', 'Nt,fp,Rd = MIN(Nu,Rd, Npl,Rd)');
+  subsection('Block tearing resistance of flange cover plate');
+  row('Net area subject to tension', 'Ant,fp', r.Ant_fp, 0, 'mm2', 'Ant,fp = (2 x e2,fp - d0) x tfp');
+  row('Net area subject to shear (2 shear planes)', 'Anv,fp', r.Anv_fp, 0, 'mm2', 'Anv,fp = n2,fp x tfp x [e1,fp + (n1,fp-1)p1,f - (n1,fp-0.5)d0]');
+  row('Block tearing resistance', 'Nt,fp,Rd,block', r.Nt_fp_Rd_block, 1, 'kN', 'Nt,fp,Rd,block = fu x Ant,fp/gammaM2 + (1/sqrt3) x fy x Anv,fp/gammaM0');
+  checkTableHeader();
+  checkRow(r.checks[7].name, r.checks[7].design, r.checks[7].resistance, r.checks[7].util, r.checks[7].pass);
+  noteLine('Beam flange is thicker than the cover plate, so it is not critical for net-section/block-tearing and is not separately checked here.');
+
+  /* ============ COMPRESSION FLANGE COVER PLATE ============ */
+  section('RESISTANCE OF COMPRESSION FLANGE COVER PLATE');
+  row('Cross-sectional area of flange cover plate', 'Afp', r.Afp, 0, 'mm2', 'Afp = bfp x tfp');
+  row('Steel factor epsilon', 'eps', r.eps, 4, '-', 'eps = sqrt(235/fy)');
+  row('Governing bolt pitch (max of p1,fp ; p1,f,j)', 'p1', r.p1_gov, 0, 'mm', 'p1 = MAX(p1,f, p1,f,j)');
+  row('Slenderness check ratio', 'p1/tfp', r.slenderRatio, 3, '-', 'p1 / tfp'); noteLine('local buckling check needed only if p1/tfp > 9 x eps');
+  row('Limit', '9eps', r.limit9eps, 3, '-', '9 x eps');
+  row('Effective (critical) buckling length', 'Lcr', r.Lcr, 1, 'mm', 'Lcr = 0.6 x p1');
+  row('Reference slenderness', 'lambda1', r.lambda1, 2, '-', 'lambda1 = 93.9 x eps');
+  row('Radius of gyration, minor axis', 'iz', r.iz, 2, 'mm', 'iz = tfp / sqrt(12)');
+  row('Non-dimensional slenderness', 'lambda_bar', r.lambdabar, 4, '-', 'lambda_bar = (Lcr / iz) / lambda1');
+  row('Imperfection factor (buckling curve c)', 'alpha', 0.49, 2, '-');
+  row('Phi', 'Phi', r.Phi, 4, '-', 'Phi = 0.5 x [1 + alpha x (lambda_bar - 0.2) + lambda_bar^2]');
+  row('Reduction factor for flexural buckling', 'chi', r.chi, 4, '-', 'chi = MIN(1, 1 / (Phi + sqrt(Phi^2 - lambda_bar^2)))');
+  row('Buckling resistance of cover plate', 'Nb,fp,Rd', r.Nb_fp_Rd, 1, 'kN', 'Nb,fp,Rd = chi x Afp x fy / gammaM1');
+  checkTableHeader();
+  checkRow(r.checks[8].name, r.checks[8].design, r.checks[8].resistance, r.checks[8].util, r.checks[8].pass);
+  noteLine('If p1/tfp <= 9 x eps, local buckling need not be considered and the gross-section resistance (Npl,Rd) governs instead of Nb,fp,Rd.');
+
+  /* ============ WEB COVER PLATES ============ */
+  section('RESISTANCE OF WEB COVER PLATES (per plate; ' + inp.nPlatesW + ' No. plates used)');
+  subsection('Shear resistance of web cover plate');
+  row('Gross shear resistance (' + inp.nPlatesW + ' plates)', 'Vwp,g,Rd', r.Vwp_g_Rd, 1, 'kN', 'Vwp,g,Rd = nplates x (hwp x twp/1.27) x (fy/sqrt3) / gammaM0');
+  row('Net shear area (' + inp.nPlatesW + ' plates)', 'Av,wp,net', r.Av_wp_net, 0, 'mm2', 'Av,wp,net = nplates x (hwp - n1,w x d0) x twp');
+  row('Net shear resistance (' + inp.nPlatesW + ' plates)', 'Vwp,net,Rd', r.Vwp_net_Rd, 1, 'kN', 'Vwp,net,Rd = Av,wp,net x (fu/sqrt3) / gammaM2');
+  subsection('Block tearing resistance of web cover plate');
+  row('Net area subject to tension (' + inp.nPlatesW + ' plates)', 'Ant,wp', r.Ant_wp, 0, 'mm2', 'Ant,wp = nplates x (e2,wp - d0/2) x twp');
+  row('Net area subject to shear (' + inp.nPlatesW + ' plates)', 'Anv,wp', r.Anv_wp, 0, 'mm2', 'Anv,wp = nplates x (hwp - e1,wp - (n1,w-0.5)d0) x twp');
+  row('Block tearing resistance', 'Vb,Rd', r.Vb_Rd, 1, 'kN', 'Vb,Rd = fy x Anv,wp/sqrt3/gammaM0 + 0.5 x fu x Ant,wp/gammaM2');
+  row('Governing web cover plate shear resistance', 'Vwp,Rd', r.Vwp_Rd, 1, 'kN', 'Vwp,Rd = MIN(Vwp,g,Rd, Vwp,net,Rd, Vb,Rd)');
+  checkTableHeader();
+  checkRow(r.checks[9].name, r.checks[9].design, r.checks[9].resistance, r.checks[9].util, r.checks[9].pass);
+
+  subsection('Bending resistance of web cover plates (combined bending + axial)');
+  row('Elastic section modulus, EACH cover plate', 'Wwp', r.Wwp, 0, 'mm3', 'Wwp = twp x hwp^2 / 6');
+  row('Shear reduction needed? (VEd > 0.5 Vpl,wp,Rd)', '-', r.shearReductionNeeded?'YES':'NO', null, '');
+  row('Shear reduction factor rho', 'rho', r.rho, 4, '-', r.shearReductionNeeded ? 'rho = (2 x Fw,V,Ed/Vwp,Rd - 1)^2' : 'rho = 0  (VEd <= 0.5 Vwp,Rd, shear reduction not required)');
+  row('Bending resistance, ' + inp.nPlatesW + ' cover plates', 'Mc,wp,Rd', r.Mc_wp_Rd, 3, 'kNm', 'Mc,wp,Rd = nplates x Wwp x (1 - rho) x fy / gammaM0');
+  row('Compression (squash) resistance, ' + inp.nPlatesW + ' cover plates', 'Nwp,Rd', r.Nwp_Rd, 1, 'kN', 'Nwp,Rd = nplates x hwp x twp x fy / gammaM0');
+  row('Total design moment on web (Mw,Ed + Mecc)', 'Mwp,Ed', r.Mwp_Ed, 3, 'kNm', 'Mwp,Ed = Mw,Ed + Mecc');
+
+  checkBreak(9);
+  doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(0);
+  doc.text('Combined bending + axial force + shear interaction - web cover plates', marginX, y); y += 4.5;
+  doc.setFont('courier','normal'); doc.setFontSize(7.4); doc.setTextColor(120);
+  doc.text('Nwp,Ed/Nwp,Rd + Mwp,Ed/Mc,wp,Rd  <=  1.0', marginX+4, y); y += 4.6;
+  doc.setTextColor(0);
+  checkBreak(7);
+  doc.setFont('helvetica','bold'); doc.setFontSize(7.8); doc.setTextColor(110);
+  doc.text('Check', marginX, y); doc.text('N', rightX-40, y, {align:'right'}); doc.text('M', rightX-20, y, {align:'right'}); doc.text('Util.', rightX, y, {align:'right'});
+  y += 3.6; doc.setDrawColor(210); doc.line(marginX, y, rightX, y); y += 3.2; doc.setTextColor(0);
+  {
+    const c = r.checks[10];
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.1);
+    const nameLines = doc.splitTextToSize(c.name, 100);
+    doc.text(nameLines, marginX, y);
+    doc.setFont('courier','normal'); doc.setFontSize(7.8);
+    doc.text(fmt(r.Fw_N_Ed/r.Nwp_Rd,3), rightX-40, y, {align:'right'});
+    doc.text(fmt(r.Mwp_Ed/r.Mc_wp_Rd,3), rightX-20, y, {align:'right'});
+    doc.setFont('courier','bold');
+    doc.setTextColor(c.pass?20:200, c.pass?120:60, c.pass?70:50);
+    doc.text((c.util*100).toFixed(1)+'%  '+(c.pass?'PASS':'FAIL'), rightX, y, {align:'right'});
+    doc.setTextColor(0);
+    y += Math.max(4.2, nameLines.length*3.8) + 1.3;
+  }
+  noteLine('Per BS EN 1993-1-8 clauses 6.2.10 & 6.2.9.2. Shear is already allowed for via the reduction factor rho applied to Mc,wp,Rd above (only triggered if VEd > 0.5 Vpl,wp,Rd).');
+
+  /* ============ BEAM WEB NET SECTION ============ */
+  section('RESISTANCE OF BEAM WEB (net section, at bolt holes)');
+  row('Shear area of gross beam section', 'Av,w', r.Av_gross, 0, 'mm2', 'Av,w = A - 2 x b x tf + (tw+2r) x tf');
+  row('Net shear area at bolt line', 'Av,net', r.Av_net, 0, 'mm2', 'Av,net = Av,w - n1,w x d0 x tw');
+  row('Net section shear resistance of beam web', 'Vn,w,Rd', r.Vn_w_Rd, 3, 'kN', 'Vn,w,Rd = Av,net x (fu/sqrt3) / gammaM2');
+  checkTableHeader();
+  checkRow(r.checks[11].name, r.checks[11].design, r.checks[11].resistance, r.checks[11].util, r.checks[11].pass);
+  noteLine('Block-tearing resistance is only applicable to a notched beam web and does not apply to a full-depth beam splice.');
+
+  /* ============ DESIGN SUMMARY ============ */
+  section('DESIGN SUMMARY - ALL CHECKS');
+  checkTableHeader();
+  r.checks.forEach(c=> checkRow(c.name, c.design, c.resistance, c.util, c.pass));
+
+  y += 2;
+  checkBreak(14);
+  doc.setDrawColor(0); doc.setLineWidth(0.4); doc.line(marginX, y, rightX, y); y += 7;
   const allPass = r.checks.every(c=>c.pass);
   doc.setFont('helvetica','bold'); doc.setFontSize(12.5);
-  doc.setTextColor(allPass?20:200, allPass?110:60, allPass?70:50);
+  doc.setTextColor(allPass?20:200, allPass?120:60, allPass?70:50);
   doc.text('OVERALL STATUS: ' + (allPass?'PASS':'FAIL'), marginX, y);
   doc.setTextColor(0);
-  y += 12;
+  y += 11;
 
-  doc.setFont('helvetica','italic'); doc.setFontSize(8.5); doc.setTextColor(120);
-  doc.text('Generated by the EN 1993 beam splice design calculator. Verify against the current edition of the code before issuing for design.', marginX, 285);
+  checkBreak(10);
+  doc.setFont('helvetica','italic'); doc.setFontSize(7.6); doc.setTextColor(120);
+  doc.text('Generated by the EN 1993 beam splice design calculator. Verify against the current edition of the code before issuing for design.', marginX, y);
 
   doc.save('beam-splice-calc-report.pdf');
 }
